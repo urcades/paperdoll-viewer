@@ -14,6 +14,7 @@
   } from "paperdoll";
   import {
     getBounds,
+    legalConnectTargets,
     getRenderNodes,
     getView,
     toCanvasPoint,
@@ -74,8 +75,19 @@
     onMutationError
   }: Props = $props();
 
+  type ConnectDrag = {
+    pointerId: number;
+    from: Endpoint;
+    originX: number;
+    originY: number;
+    active: boolean;
+    targets: Set<string>;
+  };
+
   let canvasEl: HTMLElement;
   let activePan: ActivePan | null = $state(null);
+  let connectDrag = $state<ConnectDrag | null>(null);
+  let suppressHandleClick = false;
   let view: RenderView = $derived(getView(viewControls));
   let document: PaperDollDocument = $derived({ protocol: PAPER_DOLL_PROTOCOL, body });
   let layout: DerivedLayout = $derived(deriveLayout(body));
@@ -107,6 +119,76 @@
       (matches(selection.from, from) && matches(selection.to, to)) ||
       (matches(selection.from, to) && matches(selection.to, from))
     );
+  }
+
+  function endpointKey(endpoint: Endpoint): string {
+    return `${endpoint.vessel}:${endpoint.side}`;
+  }
+
+  function beginConnectDrag(event: PointerEvent, vesselId: string, side: Side): void {
+    if (event.button !== 0) return;
+    connectDrag = {
+      pointerId: event.pointerId,
+      from: { vessel: vesselId, side },
+      originX: event.clientX,
+      originY: event.clientY,
+      active: false,
+      targets: new Set()
+    };
+    (event.currentTarget as Element).setPointerCapture(event.pointerId);
+  }
+
+  function updateConnectDrag(event: PointerEvent): void {
+    if (!connectDrag || event.pointerId !== connectDrag.pointerId) return;
+    if (!connectDrag.active) {
+      const distance = Math.hypot(event.clientX - connectDrag.originX, event.clientY - connectDrag.originY);
+      if (distance < 4) return;
+      connectDrag = {
+        ...connectDrag,
+        active: true,
+        targets: new Set(legalConnectTargets(body, connectDrag.from).map(endpointKey))
+      };
+    }
+  }
+
+  function endConnectDrag(event: PointerEvent): void {
+    if (!connectDrag || event.pointerId !== connectDrag.pointerId) return;
+    const drag = connectDrag;
+    connectDrag = null;
+    if (!drag.active) return;
+
+    suppressHandleClick = true;
+    const dropHandle = window.document.elementFromPoint(event.clientX, event.clientY)?.closest(".node-handle");
+    const dropSlot = dropHandle?.closest(".slot");
+    if (!dropHandle || !dropSlot) return;
+
+    const target: Endpoint = {
+      vessel: (dropSlot as HTMLElement).dataset.nodeId!,
+      side: (dropHandle as HTMLElement).dataset.side as Side
+    };
+    if (!drag.targets.has(endpointKey(target))) return;
+
+    try {
+      const nextBody = connect(body, drag.from, target);
+      onMutate(nextBody, {
+        select: { kind: "vessel", id: drag.from.vessel },
+        status: `Connected ${drag.from.vessel} to ${target.vessel}`
+      });
+    } catch (error) {
+      onMutationError(error);
+    }
+  }
+
+  function handleClicked(vesselId: string, side: Side): void {
+    if (suppressHandleClick) {
+      suppressHandleClick = false;
+      return;
+    }
+    if (!layout.figure[vesselId]) {
+      onMutationError(new Error(`Drag from a face to connect ${vesselId} into the figure`));
+      return;
+    }
+    addVessel(vesselId, side);
   }
 
   function addVessel(vesselId: string, side: Side): void {
@@ -304,21 +386,28 @@
           <span class="icon" aria-hidden="true">{node.icon || ""}</span>
         </span>
 
-        {#if node.kind === "figure"}
-          {#each SIDES as side (side)}
-            <button
-              class="node-handle"
-              type="button"
-              data-side={side}
-              aria-label={`Add node ${side} of ${node.label}`}
-              title={`Add node ${side}`}
-              onclick={(event) => {
-                event.stopPropagation();
-                addVessel(node.id, side);
-              }}
-            ></button>
-          {/each}
-        {/if}
+        {#each SIDES as side (side)}
+          <button
+            class="node-handle"
+            type="button"
+            data-side={side}
+            data-target={connectDrag?.active
+              ? connectDrag.targets.has(`${node.id}:${side}`)
+                ? "legal"
+                : "illegal"
+              : undefined}
+            aria-label={`Add node ${side} of ${node.label}`}
+            title={`Add node ${side}`}
+            onclick={(event) => {
+              event.stopPropagation();
+              handleClicked(node.id, side);
+            }}
+            onpointerdown={(event) => beginConnectDrag(event, node.id, side)}
+            onpointermove={updateConnectDrag}
+            onpointerup={endConnectDrag}
+            onpointercancel={() => (connectDrag = null)}
+          ></button>
+        {/each}
       </div>
       <span
         class="slot-label"

@@ -12,6 +12,7 @@ import { formatConstructionSource, getConstructionNodeRanges, parseConstructionS
 import {
   canDisconnect,
   generatePresentation,
+  legalConnectTargets,
   getBodyAtPath,
   getBounds,
   getRenderNodes,
@@ -243,6 +244,38 @@ describe("body path helpers", () => {
 
     expect(canDisconnect(body, { vessel: "feet", side: "left" })).toBe(true);
     expect(canDisconnect(body, { vessel: "ring-b", side: "top" })).toBe(true);
+  });
+
+  it("offers ring-closing and free-vessel targets for a legal connect drag", () => {
+    let body = DEFAULT_DOCUMENT.body;
+    body = insertVessel(body, {}, { at: { vessel: "feet", side: "left" }, id: "ring-a" }).body;
+    body = insertVessel(body, {}, { at: { vessel: "ring-a", side: "bottom" }, id: "ring-b" }).body;
+    body = insertVessel(body, {}, { at: { vessel: "ring-b", side: "right" }, id: "ring-c" }).body;
+
+    // ring-c.top points at feet's occupied cell: only the geometrically
+    // consistent ring closure with feet itself is legal there
+    expect(legalConnectTargets(body, { vessel: "ring-c", side: "top" })).toEqual([
+      { vessel: "feet", side: "bottom" }
+    ]);
+
+    // an empty adjacent cell admits free vessels (they gain a position from the drop)
+    const openTargets = legalConnectTargets(body, { vessel: "ring-b", side: "bottom" });
+    expect(openTargets).toContainEqual({ vessel: "floating", side: "top" });
+    expect(openTargets).toContainEqual({ vessel: "thrown", side: "top" });
+    // figure vessels in non-adjacent cells are never offered
+    expect(openTargets).not.toContainEqual({ vessel: "feet", side: "top" });
+  });
+
+  it("offers no targets from an occupied port", () => {
+    expect(legalConnectTargets(DEFAULT_DOCUMENT.body, { vessel: "body", side: "left" })).toEqual([]);
+  });
+
+  it("lets a free vessel connect into the figure", () => {
+    const targets = legalConnectTargets(DEFAULT_DOCUMENT.body, { vessel: "floating", side: "top" });
+
+    // e.g. hanging below feet-row leaves: any vessel with a free bottom port and empty cell below
+    expect(targets.length).toBeGreaterThan(0);
+    expect(targets.every((target) => target.side === "bottom")).toBe(true);
   });
 
   it("generates presentation for arbitrary bodies", () => {

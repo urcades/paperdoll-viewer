@@ -1,5 +1,7 @@
 import {
+  connect,
   disconnect,
+  OPPOSITE_SIDES,
   PAPER_DOLL_PROTOCOL,
   validateDocument,
   type Body,
@@ -170,6 +172,26 @@ export function canDisconnect(body: Body, endpoint: Endpoint): boolean {
   } catch {
     return false;
   }
+}
+
+export function legalConnectTargets(body: Body, from: Endpoint): Endpoint[] {
+  if (body.vessels[from.vessel]?.ports?.[from.side]) return [];
+
+  const side = OPPOSITE_SIDES[from.side];
+  const targets: Endpoint[] = [];
+  for (const vesselId of Object.keys(body.vessels)) {
+    if (vesselId === from.vessel) continue;
+    if (body.vessels[vesselId].ports?.[side]) continue;
+    try {
+      const next = connect(body, from, { vessel: vesselId, side });
+      if (validateDocument({ protocol: PAPER_DOLL_PROTOCOL, body: next }).length === 0) {
+        targets.push({ vessel: vesselId, side });
+      }
+    } catch {
+      // illegal candidate — not offered
+    }
+  }
+  return targets;
 }
 
 export function generatePresentation(body: Body): Record<string, VesselPresentation> {

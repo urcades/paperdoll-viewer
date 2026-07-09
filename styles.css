@@ -240,6 +240,17 @@ paper-doll-editor {
   outline: 0;
 }
 
+.node-handle[data-target="legal"]::before {
+  width: 10px;
+  height: 10px;
+  background: var(--add-highlight);
+}
+
+.node-handle[data-target="illegal"] {
+  pointer-events: none;
+  opacity: 0.2;
+}
+
 .slot:has(.node-handle[data-side="top"]:hover) .box,
 .slot:has(.node-handle[data-side="top"]:focus-visible) .box {
   box-shadow:
