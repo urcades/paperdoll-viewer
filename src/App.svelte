@@ -51,9 +51,11 @@
     target: SelectionTarget;
   };
 
-  type EmbeddedWindow = {
-    path: BodyPath;
-    title: string;
+  type VesselWindowState = {
+    vesselPath: BodyPath;
+    vessel: string;
+    bodyElementIndex: number | null;
+    drawerVessel: string | null;
   };
 
   type MutationMeta = {
@@ -89,18 +91,33 @@
   let sourceStatus: string | null = $state(null);
   let pan: Pan = $state({ x: 0, y: 0 });
   let viewControls: ViewControls = $state(structuredClone(INITIAL_VIEW_CONTROLS));
-  let embeddedWindow = $state<EmbeddedWindow | null>(null);
+  let vesselWindow = $state<VesselWindowState | null>(null);
   let mode = $state<"construct" | "play">("construct");
   let elementDrag = $state<ElementDrag | null>(null);
   let rejectFlash = $state<{ path: BodyPath; vessel: string } | null>(null);
   let rejectTimer: ReturnType<typeof setTimeout> | undefined;
 
-  let windowBody: Body | null = $derived(embeddedWindow ? getBodyAtPath(document.body, embeddedWindow.path) : null);
+  let windowSurfaceBody: Body | null = $derived(
+    vesselWindow ? getBodyAtPath(document.body, vesselWindow.vesselPath) : null
+  );
+  let windowVessel = $derived(
+    vesselWindow && windowSurfaceBody ? (windowSurfaceBody.vessels[vesselWindow.vessel] ?? null) : null
+  );
+  let windowCanvasPath: BodyPath | null = $derived(
+    vesselWindow && vesselWindow.bodyElementIndex !== null
+      ? [...vesselWindow.vesselPath, { vessel: vesselWindow.vessel, elementIndex: vesselWindow.bodyElementIndex }]
+      : null
+  );
+  let windowBody: Body | null = $derived(windowCanvasPath ? getBodyAtPath(document.body, windowCanvasPath) : null);
+  let windowDrawerVessel = $derived(
+    vesselWindow?.drawerVessel && windowBody ? (windowBody.vessels[vesselWindow.drawerVessel] ?? null) : null
+  );
+  let windowTitle = $derived(getWindowTitle(vesselWindow));
   let rootSelection: SelectionTarget | null = $derived(
     selection && pathsEqual(selection.path, []) ? selection.target : null
   );
   let windowSelection: SelectionTarget | null = $derived(
-    selection && embeddedWindow && pathsEqual(selection.path, embeddedWindow.path) ? selection.target : null
+    selection && windowCanvasPath && pathsEqual(selection.path, windowCanvasPath) ? selection.target : null
   );
   let selectedRootVesselId = $derived(rootSelection?.kind === "vessel" ? rootSelection.id : document.body.root);
   let canDelete = $derived(computeCanDelete(selection));
@@ -114,6 +131,14 @@
   );
   let rootRejectVesselId = $derived(
     rejectFlash && pathsEqual(rejectFlash.path, []) ? rejectFlash.vessel : null
+  );
+  let windowDropTargets = $derived(
+    elementDrag?.active && windowCanvasPath && pathsEqual(elementDrag.path, windowCanvasPath)
+      ? elementDrag.targets
+      : null
+  );
+  let windowRejectVesselId = $derived(
+    rejectFlash && windowCanvasPath && pathsEqual(rejectFlash.path, windowCanvasPath) ? rejectFlash.vessel : null
   );
 
   function beginElementDrag(event: PointerEvent, path: BodyPath, vesselId: string, index: number): void {
@@ -196,9 +221,9 @@
     const slot = dropped.closest(".slot");
     if (!slot) return null;
     const inWindow = Boolean(dropped.closest(".embedded-body-window"));
-    const sameSurface = pathsEqual(drag.path, [])
-      ? !inWindow
-      : Boolean(inWindow && embeddedWindow && pathsEqual(drag.path, embeddedWindow.path));
+    const sameSurface = inWindow
+      ? Boolean(windowCanvasPath && pathsEqual(drag.path, windowCanvasPath))
+      : pathsEqual(drag.path, []);
     return sameSurface ? ((slot as HTMLElement).dataset.nodeId ?? null) : null;
   }
 
@@ -238,13 +263,18 @@
   }
 
   function openVessel(vesselId: string): void {
-    const element = findEmbeddedBodyElement(document.body, vesselId);
-    if (!element?.body) return;
+    vesselWindow = { vesselPath: [], vessel: vesselId, bodyElementIndex: null, drawerVessel: null };
+  }
 
-    embeddedWindow = {
-      path: [{ vessel: vesselId, elementIndex: element.index }],
-      title: `${presentation[vesselId]?.label?.replace(/\s+/g, " ") ?? vesselId}: ${element.id ?? element.type ?? element.kind}`
-    };
+  function getWindowTitle(state: VesselWindowState | null): string {
+    if (!state) return "";
+    const label =
+      state.vesselPath.length === 0
+        ? (presentation[state.vessel]?.label?.replace(/\s+/g, " ") ?? state.vessel)
+        : state.vessel;
+    if (state.bodyElementIndex === null) return label;
+    const element = windowSurfaceBody?.vessels[state.vessel]?.contains?.[state.bodyElementIndex];
+    return `${label}: ${element ? describeElement(element) : "embedded body"}`;
   }
 
   function commitBodyAt(path: BodyPath, nextBody: Body, meta: MutationMeta): void {
@@ -299,7 +329,7 @@
 
     selectedPresetId = preset.id;
     pan = { x: 0, y: 0 };
-    embeddedWindow = null;
+    vesselWindow = null;
     commitConstruction(
       structuredClone(preset.document),
       structuredClone(preset.presentation),
@@ -350,8 +380,17 @@
     document = parsedDocument.value;
     presentation = nextPresentation;
     viewControls = nextViewControls;
-    if (embeddedWindow && !getBodyAtPath(document.body, embeddedWindow.path)) {
-      embeddedWindow = null;
+    if (vesselWindow) {
+      const surface = getBodyAtPath(document.body, vesselWindow.vesselPath);
+      const vessel = surface?.vessels[vesselWindow.vessel];
+      if (!vessel) {
+        vesselWindow = null;
+      } else if (
+        vesselWindow.bodyElementIndex !== null &&
+        !vessel.contains?.[vesselWindow.bodyElementIndex]?.body
+      ) {
+        vesselWindow = { ...vesselWindow, bodyElementIndex: null, drawerVessel: null };
+      }
     }
     selection = reconcileSelection(nextSelection);
     status = nextStatus;
@@ -374,16 +413,6 @@
     const { from, to } = candidate.target;
     const stillConnected = body.vessels[from.vessel]?.ports?.[from.side]?.vessel === to.vessel;
     return stillConnected ? candidate : { path: candidate.path, target: { kind: "vessel", id: body.root } };
-  }
-
-  function findEmbeddedBodyElement(
-    body: Body,
-    vesselId: string
-  ): (ContainedElement & { index: number }) | undefined {
-    const contains = body.vessels[vesselId]?.contains;
-    const index = contains?.findIndex((element) => element.body) ?? -1;
-    if (index === -1 || !contains) return undefined;
-    return { ...contains[index], index };
   }
 
   function setErrorStatus(error: unknown): void {
@@ -439,17 +468,48 @@
     onDeleteSelected={deleteSelected}
   >
     {#snippet window()}
-      {#if embeddedWindow && windowBody}
+      {#if vesselWindow && windowVessel}
         <VesselWindow
+          title={windowTitle}
+          list={vesselWindow.bodyElementIndex === null
+            ? { elements: windowVessel.contains ?? [], accepts: windowVessel.accepts }
+            : null}
           body={windowBody}
-          title={embeddedWindow.title}
+          drawer={windowDrawerVessel && vesselWindow.drawerVessel
+            ? {
+                title: vesselWindow.drawerVessel,
+                elements: windowDrawerVessel.contains ?? [],
+                accepts: windowDrawerVessel.accepts
+              }
+            : null}
           {viewControls}
           selection={windowSelection}
-          onSelect={(target) => selectAt(embeddedWindow!.path, target)}
-          onOpenVessel={() => {}}
-          onMutate={(nextBody, meta) => commitBodyAt(embeddedWindow!.path, nextBody, meta)}
+          dropTargets={windowDropTargets}
+          rejectVesselId={windowRejectVesselId}
+          onOpenBodyElement={(index) =>
+            (vesselWindow = { ...vesselWindow!, bodyElementIndex: index, drawerVessel: null })}
+          onDrawerOpenBodyElement={(index) =>
+            (vesselWindow = {
+              vesselPath: windowCanvasPath!,
+              vessel: vesselWindow!.drawerVessel!,
+              bodyElementIndex: index,
+              drawerVessel: null
+            })}
+          onBack={vesselWindow.bodyElementIndex !== null
+            ? () => (vesselWindow = { ...vesselWindow!, bodyElementIndex: null, drawerVessel: null })
+            : null}
+          onClose={() => (vesselWindow = null)}
+          onDrawerClose={() => (vesselWindow = { ...vesselWindow!, drawerVessel: null })}
+          onSelect={(target) => windowCanvasPath && selectAt(windowCanvasPath, target)}
+          onOpenVessel={(id) => (vesselWindow = { ...vesselWindow!, drawerVessel: id })}
+          onMutate={(nextBody, meta) => windowCanvasPath && commitBodyAt(windowCanvasPath, nextBody, meta)}
           onMutationError={setErrorStatus}
-          onClose={() => (embeddedWindow = null)}
+          onListPointerDown={(event, index) =>
+            beginElementDrag(event, vesselWindow!.vesselPath, vesselWindow!.vessel, index)}
+          onDrawerPointerDown={(event, index) =>
+            windowCanvasPath && beginElementDrag(event, windowCanvasPath, vesselWindow!.drawerVessel!, index)}
+          onElementPointerMove={updateElementDrag}
+          onElementPointerUp={endElementDrag}
         />
       {/if}
     {/snippet}

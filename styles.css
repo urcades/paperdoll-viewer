@@ -307,12 +307,88 @@ paper-doll-editor {
   left: 50%;
   z-index: 4;
   display: grid;
-  grid-template-rows: var(--header-height) 1fr;
+  grid-template-rows: var(--header-height) 1fr auto;
   width: min(520px, calc(100% - 48px));
   height: min(420px, calc(100% - 88px));
   border: 1px solid var(--line);
   background: var(--background);
   transform: translate(-50%, -50%);
+}
+
+.window-title {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.element-list {
+  margin: 0;
+  padding: 8px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.element-row {
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.element-row:hover {
+  border-color: var(--line);
+}
+
+.element-row-head {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.element-row-name {
+  flex: 1;
+}
+
+.element-row-type {
+  opacity: 0.5;
+  white-space: nowrap;
+}
+
+.element-open {
+  padding: 0 6px;
+  border: 1px solid var(--line) !important;
+}
+
+.element-data {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  opacity: 0.7;
+}
+
+.element-empty {
+  padding: 8px 10px;
+  opacity: 0.5;
+}
+
+.element-drawer {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  max-height: 45%;
+  min-height: 0;
+  border-top: 1px solid var(--line);
+}
+
+.element-drawer header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 4px 14px;
+  border-bottom: 1px solid var(--line);
+  opacity: 0.8;
 }
 
 .embedded-body-window header {
