@@ -8,6 +8,7 @@
     deriveLayout,
     type Body,
     type DerivedLayout,
+    type Endpoint,
     type PaperDollDocument,
     type Side
   } from "paperdoll";
@@ -90,11 +91,23 @@
         if (!fromNode || !toNode) return null;
         return {
           key: `${edge.from.vessel}:${edge.from.side}-${edge.to.vessel}:${edge.to.side}`,
+          from: edge.from,
+          to: edge.to,
+          selected: isConnectionSelected(edge.from, edge.to),
           path: getEdgePath(getPort(fromNode, edge.from.side), getPort(toNode, edge.to.side))
         };
       })
-      .filter((edge): edge is { key: string; path: string } => Boolean(edge))
+      .filter((edge): edge is NonNullable<typeof edge> => Boolean(edge))
   );
+
+  function isConnectionSelected(from: Endpoint, to: Endpoint): boolean {
+    if (selection?.kind !== "connection") return false;
+    const matches = (a: Endpoint, b: Endpoint) => a.vessel === b.vessel && a.side === b.side;
+    return (
+      (matches(selection.from, from) && matches(selection.to, to)) ||
+      (matches(selection.from, to) && matches(selection.to, from))
+    );
+  }
 
   function addVessel(vesselId: string, side: Side): void {
     try {
@@ -241,9 +254,25 @@
     style:--pan-x={`${pan.x}px`}
     style:--pan-y={`${pan.y}px`}
   >
-    <svg class="edges" viewBox={`0 0 ${bounds.width} ${bounds.height}`} aria-hidden="true">
+    <svg class="edges" viewBox={`0 0 ${bounds.width} ${bounds.height}`}>
       {#each edges as edge (edge.key)}
-        <path class="edge" d={edge.path}></path>
+        <path class="edge" data-selected={edge.selected} d={edge.path}></path>
+        <path
+          class="edge-hit"
+          d={edge.path}
+          role="button"
+          tabindex="-1"
+          aria-label={`Connection ${edge.from.vessel} to ${edge.to.vessel}`}
+          onclick={(event) => {
+            event.stopPropagation();
+            onSelect({ kind: "connection", from: edge.from, to: edge.to });
+          }}
+          onkeydown={(event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            onSelect({ kind: "connection", from: edge.from, to: edge.to });
+          }}
+        ></path>
       {/each}
     </svg>
 

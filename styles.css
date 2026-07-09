@@ -130,6 +130,21 @@ paper-doll-editor {
   shape-rendering: crispEdges;
 }
 
+.edge[data-selected="true"] {
+  stroke: var(--foreground);
+  stroke-opacity: 1;
+  stroke-width: calc(var(--node-line-width) * 3);
+}
+
+.edge-hit {
+  stroke: transparent;
+  stroke-width: 14;
+  fill: none;
+  pointer-events: stroke;
+  cursor: pointer;
+  outline: 0;
+}
+
 .slot {
   position: absolute;
   width: var(--node);

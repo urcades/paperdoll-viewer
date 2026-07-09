@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deleteVessel, deriveLayout, insertVessel, parseDocument } from "paperdoll";
+import { connect, deleteVessel, deriveLayout, insertVessel, parseDocument } from "paperdoll";
 import {
   DEFAULT_CANVAS_PADDING,
   DEFAULT_CONNECTOR_LENGTH,
@@ -10,6 +10,7 @@ import {
 } from "./sample-document";
 import { formatConstructionSource, getConstructionNodeRanges, parseConstructionSource } from "./construction-source";
 import {
+  canDisconnect,
   generatePresentation,
   getBodyAtPath,
   getBounds,
@@ -221,6 +222,27 @@ describe("body path helpers", () => {
     expect(() =>
       replaceBodyAtPath(DEFAULT_DOCUMENT.body, [{ vessel: "feet", elementIndex: 0 }], DEFAULT_DOCUMENT.body)
     ).toThrow(/No embedded body/);
+  });
+
+  it("allows disconnecting a leaf edge (leaf derives as free)", () => {
+    // missile-right's only connection; severing leaves it port-less and free
+    expect(canDisconnect(DEFAULT_DOCUMENT.body, { vessel: "missile-right", side: "left" })).toBe(true);
+  });
+
+  it("blocks disconnecting a mid-graph edge that would orphan a ported subtree", () => {
+    // cutting body<->left-arm orphans left-arm, left-hand, hands-worn (all still ported)
+    expect(canDisconnect(DEFAULT_DOCUMENT.body, { vessel: "body", side: "left" })).toBe(false);
+  });
+
+  it("allows disconnecting a ring edge (cycle stays reachable)", () => {
+    let body = DEFAULT_DOCUMENT.body;
+    body = insertVessel(body, {}, { at: { vessel: "feet", side: "left" }, id: "ring-a" }).body;
+    body = insertVessel(body, {}, { at: { vessel: "ring-a", side: "bottom" }, id: "ring-b" }).body;
+    body = insertVessel(body, {}, { at: { vessel: "ring-b", side: "right" }, id: "ring-c" }).body;
+    body = connect(body, { vessel: "ring-c", side: "top" }, { vessel: "feet", side: "bottom" });
+
+    expect(canDisconnect(body, { vessel: "feet", side: "left" })).toBe(true);
+    expect(canDisconnect(body, { vessel: "ring-b", side: "top" })).toBe(true);
   });
 
   it("generates presentation for arbitrary bodies", () => {

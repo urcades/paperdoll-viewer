@@ -1,7 +1,7 @@
 <script lang="ts">
   import {
     deleteVessel,
-    deriveLayout,
+    disconnect,
     parseDocument,
     type Body,
     type ContainedElement,
@@ -27,6 +27,7 @@
     parseConstructionSource
   } from "./construction-source";
   import {
+    canDisconnect,
     getBodyAtPath,
     pathsEqual,
     replaceBodyAtPath,
@@ -86,15 +87,28 @@
   let nodeRanges = $derived(getConstructionNodeRanges(constructionSource));
 
   function computeCanDelete(current: Selection | null): boolean {
-    if (!current || current.target.kind !== "vessel") return false;
+    if (!current) return false;
     const body = getBodyAtPath(document.body, current.path);
     if (!body) return false;
-    return current.target.id !== body.root && Boolean(body.vessels[current.target.id]);
+    if (current.target.kind === "vessel") {
+      return current.target.id !== body.root && Boolean(body.vessels[current.target.id]);
+    }
+    return canDisconnect(body, current.target.from);
   }
 
   function selectAt(path: BodyPath, target: SelectionTarget): void {
     selection = { path, target };
-    status = target.kind === "vessel" ? `Selected ${target.id}` : `Selected connection ${target.from.vessel}:${target.from.side}`;
+    if (target.kind === "vessel") {
+      status = `Selected ${target.id}`;
+      return;
+    }
+
+    const label = `${target.from.vessel} ↔ ${target.to.vessel}`;
+    const body = getBodyAtPath(document.body, path);
+    status =
+      body && canDisconnect(body, target.from)
+        ? `Selected connection ${label}`
+        : `Selected connection ${label} — cannot sever: would orphan ported vessels`;
   }
 
   function openVessel(vesselId: string): void {
@@ -125,9 +139,20 @@
 
   function deleteSelected(): void {
     try {
-      if (!selection || selection.target.kind !== "vessel") return;
+      if (!selection) return;
       const body = getBodyAtPath(document.body, selection.path);
       if (!body) return;
+
+      if (selection.target.kind === "connection") {
+        const { from, to } = selection.target;
+        const nextBody = disconnect(body, from);
+        commitBodyAt(selection.path, nextBody, {
+          select: { kind: "vessel", id: from.vessel },
+          status: `Severed ${from.vessel} ↔ ${to.vessel}`
+        });
+        return;
+      }
+
       if (selection.target.id === body.root) {
         throw new Error(`Cannot delete root ${selection.target.id}`);
       }

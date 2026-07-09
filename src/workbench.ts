@@ -1,4 +1,7 @@
 import {
+  disconnect,
+  PAPER_DOLL_PROTOCOL,
+  validateDocument,
   type Body,
   type DerivedLayout,
   type DerivedPosition,
@@ -158,6 +161,15 @@ export function replaceBodyAtPath(root: Body, path: BodyPath, next: Body): Body 
       [vessel]: { ...container, contains }
     }
   };
+}
+
+export function canDisconnect(body: Body, endpoint: Endpoint): boolean {
+  try {
+    const next = disconnect(body, endpoint);
+    return validateDocument({ protocol: PAPER_DOLL_PROTOCOL, body: next }).length === 0;
+  } catch {
+    return false;
+  }
 }
 
 export function generatePresentation(body: Body): Record<string, VesselPresentation> {
