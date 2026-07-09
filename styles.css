@@ -308,6 +308,11 @@ paper-doll-editor {
   cursor: pointer;
 }
 
+.embedded-body-surface {
+  display: grid;
+  min-height: 0;
+}
+
 .embedded-body-viewport {
   position: relative;
   min-height: 0;

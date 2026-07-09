@@ -9,7 +9,14 @@ import {
   VESSEL_PRESENTATION
 } from "./sample-document";
 import { formatConstructionSource, getConstructionNodeRanges, parseConstructionSource } from "./construction-source";
-import { getBounds, getRenderNodes, getView } from "./workbench";
+import {
+  generatePresentation,
+  getBodyAtPath,
+  getBounds,
+  getRenderNodes,
+  getView,
+  replaceBodyAtPath
+} from "./workbench";
 
 describe("paperdoll viewer construction flow", () => {
   it("uses a valid v2 protocol document as the body model", () => {
@@ -171,5 +178,56 @@ describe("paperdoll viewer construction flow", () => {
     }).replace('label: "Face"', 'label: "Face');
 
     expect(() => parseConstructionSource(source)).toThrow(SyntaxError);
+  });
+});
+
+describe("body path helpers", () => {
+  const BACKPACK_PATH = [{ vessel: "back", elementIndex: 0 }];
+
+  it("resolves the root body for an empty path", () => {
+    expect(getBodyAtPath(DEFAULT_DOCUMENT.body, [])).toBe(DEFAULT_DOCUMENT.body);
+  });
+
+  it("resolves a nested body through vessel/element segments", () => {
+    const backpack = getBodyAtPath(DEFAULT_DOCUMENT.body, BACKPACK_PATH);
+
+    expect(backpack?.root).toBe("pack-shell");
+    expect(backpack?.vessels["top-pocket"]).toBeDefined();
+  });
+
+  it("returns null for paths that do not lead to a body", () => {
+    expect(getBodyAtPath(DEFAULT_DOCUMENT.body, [{ vessel: "feet", elementIndex: 0 }])).toBeNull();
+    expect(getBodyAtPath(DEFAULT_DOCUMENT.body, [{ vessel: "missing", elementIndex: 0 }])).toBeNull();
+  });
+
+  it("replaces a nested body immutably along the path", () => {
+    const backpack = getBodyAtPath(DEFAULT_DOCUMENT.body, BACKPACK_PATH)!;
+    const mutated = insertVessel(backpack, {}, { id: "side-loop" }).body;
+
+    const nextRoot = replaceBodyAtPath(DEFAULT_DOCUMENT.body, BACKPACK_PATH, mutated);
+
+    expect(getBodyAtPath(nextRoot, BACKPACK_PATH)?.vessels["side-loop"]).toBeDefined();
+    expect(getBodyAtPath(DEFAULT_DOCUMENT.body, BACKPACK_PATH)?.vessels["side-loop"]).toBeUndefined();
+    expect(nextRoot.vessels.feet).toBe(DEFAULT_DOCUMENT.body.vessels.feet);
+    expect(parseDocument({ protocol: "paper-doll/v2", body: nextRoot }).ok).toBe(true);
+  });
+
+  it("replaces the root body for an empty path", () => {
+    const next = insertVessel(DEFAULT_DOCUMENT.body, {}, { id: "extra" }).body;
+    expect(replaceBodyAtPath(DEFAULT_DOCUMENT.body, [], next)).toBe(next);
+  });
+
+  it("throws when replacing along an invalid path", () => {
+    expect(() =>
+      replaceBodyAtPath(DEFAULT_DOCUMENT.body, [{ vessel: "feet", elementIndex: 0 }], DEFAULT_DOCUMENT.body)
+    ).toThrow(/No embedded body/);
+  });
+
+  it("generates presentation for arbitrary bodies", () => {
+    const backpack = getBodyAtPath(DEFAULT_DOCUMENT.body, BACKPACK_PATH)!;
+    const presentation = generatePresentation(backpack);
+
+    expect(presentation["pack-shell"].icon).toBe("@");
+    expect(presentation["top-pocket"].label).toBe("Top\nPocket");
   });
 });

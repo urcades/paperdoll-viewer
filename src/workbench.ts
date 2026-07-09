@@ -1,9 +1,27 @@
 import {
+  type Body,
   type DerivedLayout,
   type DerivedPosition,
-  type PaperDollDocument
+  type Endpoint,
+  type PaperDollDocument,
+  type VesselId
 } from "paperdoll";
 import type { VesselPresentation } from "./sample-document";
+
+export type BodyPathSegment = {
+  vessel: VesselId;
+  elementIndex: number;
+};
+
+export type BodyPath = readonly BodyPathSegment[];
+
+export type SelectionTarget =
+  | { kind: "vessel"; id: VesselId }
+  | { kind: "connection"; from: Endpoint; to: Endpoint };
+
+export function pathsEqual(a: BodyPath, b: BodyPath): boolean {
+  return a.length === b.length && a.every((segment, index) => segment.vessel === b[index].vessel && segment.elementIndex === b[index].elementIndex);
+}
 
 export type RenderView = {
   node: number;
@@ -108,4 +126,56 @@ function toRenderNode(
 
 function formatElement(element: { kind: string; type?: string; id?: string }): string {
   return element.id ?? (element.type ? `${element.kind}/${element.type}` : element.kind);
+}
+
+export function getBodyAtPath(root: Body, path: BodyPath): Body | null {
+  let body = root;
+  for (const segment of path) {
+    const next = body.vessels[segment.vessel]?.contains?.[segment.elementIndex]?.body;
+    if (!next) return null;
+    body = next;
+  }
+  return body;
+}
+
+export function replaceBodyAtPath(root: Body, path: BodyPath, next: Body): Body {
+  if (path.length === 0) return next;
+
+  const [{ vessel, elementIndex }, ...rest] = path;
+  const container = root.vessels[vessel];
+  const element = container?.contains?.[elementIndex];
+  if (!element?.body) {
+    throw new Error(`No embedded body at ${vessel}[${elementIndex}]`);
+  }
+
+  const contains = container.contains!.map((candidate, index) =>
+    index === elementIndex ? { ...candidate, body: replaceBodyAtPath(candidate.body!, rest, next) } : candidate
+  );
+  return {
+    ...root,
+    vessels: {
+      ...root.vessels,
+      [vessel]: { ...container, contains }
+    }
+  };
+}
+
+export function generatePresentation(body: Body): Record<string, VesselPresentation> {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  return Object.fromEntries(
+    Object.keys(body.vessels).map((id, index) => [
+      id,
+      {
+        label: formatGeneratedLabel(id),
+        icon: id === body.root ? "@" : alphabet[index % alphabet.length]
+      }
+    ])
+  );
+}
+
+function formatGeneratedLabel(id: string): string {
+  return id
+    .split("-")
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join("\n");
 }

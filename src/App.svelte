@@ -1,18 +1,14 @@
 <script lang="ts">
   import {
-    connect,
     deleteVessel,
     deriveLayout,
-    insertVessel,
-    OPPOSITE_SIDES,
     parseDocument,
     type Body,
     type ContainedElement,
-    type DerivedLayout,
-    type PaperDollDocument,
-    type Side
+    type PaperDollDocument
   } from "paperdoll";
   import PaperDollCanvas from "./PaperDollCanvas.svelte";
+  import VesselWindow from "./VesselWindow.svelte";
   import SourcePanel from "./SourcePanel.svelte";
   import {
     DEFAULT_CANVAS_PADDING,
@@ -30,17 +26,33 @@
     getConstructionNodeRanges,
     parseConstructionSource
   } from "./construction-source";
-  import { type ViewControls } from "./workbench";
+  import {
+    getBodyAtPath,
+    pathsEqual,
+    replaceBodyAtPath,
+    type BodyPath,
+    type SelectionTarget,
+    type ViewControls
+  } from "./workbench";
 
   type Pan = {
     x: number;
     y: number;
   };
 
-  type EmbeddedBodyView = {
-    vesselId: string;
+  type Selection = {
+    path: BodyPath;
+    target: SelectionTarget;
+  };
+
+  type EmbeddedWindow = {
+    path: BodyPath;
     title: string;
-    body: Body;
+  };
+
+  type MutationMeta = {
+    select?: SelectionTarget;
+    status: string;
   };
 
   const INITIAL_VIEW_CONTROLS: ViewControls = {
@@ -51,97 +63,59 @@
 
   let document: PaperDollDocument = $state(structuredClone(DEFAULT_DOCUMENT));
   let presentation: Record<string, VesselPresentation> = $state(structuredClone(VESSEL_PRESENTATION));
-  let layout: DerivedLayout = $state(deriveLayout(DEFAULT_DOCUMENT.body));
-  let selectedId = $state("body");
+  let selection = $state<Selection | null>({ path: [], target: { kind: "vessel", id: DEFAULT_DOCUMENT.body.root } });
   let selectedPresetId = $state(DEFAULT_PRESET.id);
-  let status = $state("Selected body");
+  let status = $state(`Selected ${DEFAULT_DOCUMENT.body.root}`);
   let sourceStatus: string | null = $state(null);
   let pan: Pan = $state({ x: 0, y: 0 });
   let viewControls: ViewControls = $state(structuredClone(INITIAL_VIEW_CONTROLS));
-  let embeddedBodyView: EmbeddedBodyView | null = $state(null);
+  let embeddedWindow = $state<EmbeddedWindow | null>(null);
 
-  let canDelete = $derived(selectedId !== document.body.root && hasNode(selectedId));
+  let windowBody: Body | null = $derived(embeddedWindow ? getBodyAtPath(document.body, embeddedWindow.path) : null);
+  let rootSelection: SelectionTarget | null = $derived(
+    selection && pathsEqual(selection.path, []) ? selection.target : null
+  );
+  let windowSelection: SelectionTarget | null = $derived(
+    selection && embeddedWindow && pathsEqual(selection.path, embeddedWindow.path) ? selection.target : null
+  );
+  let selectedRootVesselId = $derived(rootSelection?.kind === "vessel" ? rootSelection.id : document.body.root);
+  let canDelete = $derived(computeCanDelete(selection));
   let constructionSource = $state(
     formatConstructionSource(DEFAULT_DOCUMENT, VESSEL_PRESENTATION, INITIAL_VIEW_CONTROLS)
   );
   let nodeRanges = $derived(getConstructionNodeRanges(constructionSource));
 
-  function selectNode(id: string): void {
-    selectedId = id;
-    status = `Selected ${id}`;
+  function computeCanDelete(current: Selection | null): boolean {
+    if (!current || current.target.kind !== "vessel") return false;
+    const body = getBodyAtPath(document.body, current.path);
+    if (!body) return false;
+    return current.target.id !== body.root && Boolean(body.vessels[current.target.id]);
   }
 
-  function openEmbeddedBody(vesselId: string): void {
-    const element = findEmbeddedBodyElement(vesselId);
+  function selectAt(path: BodyPath, target: SelectionTarget): void {
+    selection = { path, target };
+    status = target.kind === "vessel" ? `Selected ${target.id}` : `Selected connection ${target.from.vessel}:${target.from.side}`;
+  }
+
+  function openVessel(vesselId: string): void {
+    const element = findEmbeddedBodyElement(document.body, vesselId);
     if (!element?.body) return;
 
-    embeddedBodyView = {
-      vesselId,
-      title: `${presentation[vesselId]?.label?.replace(/\s+/g, " ") ?? vesselId}: ${element.id ?? element.type ?? element.kind}`,
-      body: element.body
+    embeddedWindow = {
+      path: [{ vessel: vesselId, elementIndex: element.index }],
+      title: `${presentation[vesselId]?.label?.replace(/\s+/g, " ") ?? vesselId}: ${element.id ?? element.type ?? element.kind}`
     };
   }
 
-  function addVessel(vesselId: string, side: Side): void {
+  function commitBodyAt(path: BodyPath, nextBody: Body, meta: MutationMeta): void {
     try {
-      const neighborId = findAdjacentVessel(vesselId, side);
-      if (neighborId && !document.body.vessels[vesselId].ports?.[side]) {
-        const body = connect(
-          document.body,
-          { vessel: vesselId, side },
-          { vessel: neighborId, side: OPPOSITE_SIDES[side] }
-        );
-        commitConstruction(
-          { ...document, body },
-          presentation,
-          viewControls,
-          vesselId,
-          `Connected ${vesselId} to ${neighborId}`,
-          true
-        );
-        return;
-      }
-
-      const result = insertVessel(document.body, {}, { at: { vessel: vesselId, side } });
+      const rootBody = replaceBodyAtPath($state.snapshot(document.body) as Body, path, $state.snapshot(nextBody) as Body);
       commitConstruction(
-        { ...document, body: result.body },
+        { ...document, body: rootBody },
         presentation,
         viewControls,
-        result.vesselId,
-        `Added ${result.vesselId}`,
-        true
-      );
-    } catch (error) {
-      setErrorStatus(error);
-    }
-  }
-
-  function findAdjacentVessel(vesselId: string, side: Side): string | null {
-    const position = layout.figure[vesselId];
-    if (!position) return null;
-
-    const vectors: Record<Side, { x: number; y: number }> = {
-      top: { x: 0, y: -1 },
-      right: { x: 1, y: 0 },
-      bottom: { x: 0, y: 1 },
-      left: { x: -1, y: 0 }
-    };
-    const target = { x: position.x + vectors[side].x, y: position.y + vectors[side].y };
-    const neighbor = Object.entries(layout.figure).find(
-      ([, candidate]) => candidate.x === target.x && candidate.y === target.y
-    );
-    return neighbor?.[0] ?? null;
-  }
-
-  function addZone(): void {
-    try {
-      const result = insertVessel(document.body);
-      commitConstruction(
-        { ...document, body: result.body },
-        presentation,
-        viewControls,
-        result.vesselId,
-        `Added free ${result.vesselId}`,
+        meta.select ? { path, target: meta.select } : selection,
+        meta.status,
         true
       );
     } catch (error) {
@@ -151,12 +125,18 @@
 
   function deleteSelected(): void {
     try {
-      if (selectedId === document.body.root) {
-        throw new Error(`Cannot delete root ${selectedId}`);
+      if (!selection || selection.target.kind !== "vessel") return;
+      const body = getBodyAtPath(document.body, selection.path);
+      if (!body) return;
+      if (selection.target.id === body.root) {
+        throw new Error(`Cannot delete root ${selection.target.id}`);
       }
 
-      const body = deleteVessel(document.body, selectedId, { collapseOppositeNeighbors: true });
-      commitConstruction({ ...document, body }, presentation, viewControls, document.body.root, "Deleted node", true);
+      const nextBody = deleteVessel(body, selection.target.id, { collapseOppositeNeighbors: true });
+      commitBodyAt(selection.path, nextBody, {
+        select: { kind: "vessel", id: nextBody.root },
+        status: "Deleted node"
+      });
     } catch (error) {
       setErrorStatus(error);
     }
@@ -168,18 +148,19 @@
 
     selectedPresetId = preset.id;
     pan = { x: 0, y: 0 };
+    embeddedWindow = null;
     commitConstruction(
       structuredClone(preset.document),
       structuredClone(preset.presentation),
       structuredClone(INITIAL_VIEW_CONTROLS),
-      preset.document.body.root,
+      { path: [], target: { kind: "vessel", id: preset.document.body.root } },
       `Selected ${preset.name}`,
       true
     );
   }
 
   function handleViewControlsChange(nextControls: ViewControls): void {
-    commitConstruction(document, presentation, nextControls, selectedId, status, true);
+    commitConstruction(document, presentation, nextControls, selection, status, true);
   }
 
   function handleConstructionSourceChange(nextSource: string): void {
@@ -190,7 +171,7 @@
         construction.document,
         construction.presentation,
         construction.view,
-        selectedId,
+        selection,
         `Rendered ${Object.keys(construction.document.body.vessels).length} vessels`,
         false
       );
@@ -205,7 +186,7 @@
     nextDocument: PaperDollDocument,
     nextPresentation: Record<string, VesselPresentation>,
     nextViewControls: ViewControls,
-    nextSelection: string,
+    nextSelection: Selection | null,
     nextStatus: string,
     rewriteSource: boolean
   ): void {
@@ -218,11 +199,10 @@
     document = parsedDocument.value;
     presentation = nextPresentation;
     viewControls = nextViewControls;
-    layout = deriveLayout(document.body);
-    selectedId = hasNode(nextSelection) ? nextSelection : document.body.root;
-    if (embeddedBodyView && !findEmbeddedBodyElement(embeddedBodyView.vesselId)?.body) {
-      embeddedBodyView = null;
+    if (embeddedWindow && !getBodyAtPath(document.body, embeddedWindow.path)) {
+      embeddedWindow = null;
     }
+    selection = reconcileSelection(nextSelection);
     status = nextStatus;
     if (rewriteSource) {
       constructionSource = formatConstructionSource(document, presentation, viewControls);
@@ -230,12 +210,29 @@
     }
   }
 
-  function hasNode(id: string): boolean {
-    return Boolean(document.body.vessels[id]);
+  function reconcileSelection(candidate: Selection | null): Selection {
+    const rootFallback: Selection = { path: [], target: { kind: "vessel", id: document.body.root } };
+    if (!candidate) return rootFallback;
+
+    const body = getBodyAtPath(document.body, candidate.path);
+    if (!body) return rootFallback;
+    if (candidate.target.kind === "vessel") {
+      return body.vessels[candidate.target.id] ? candidate : { path: candidate.path, target: { kind: "vessel", id: body.root } };
+    }
+
+    const { from, to } = candidate.target;
+    const stillConnected = body.vessels[from.vessel]?.ports?.[from.side]?.vessel === to.vessel;
+    return stillConnected ? candidate : { path: candidate.path, target: { kind: "vessel", id: body.root } };
   }
 
-  function findEmbeddedBodyElement(vesselId: string): ContainedElement | undefined {
-    return document.body.vessels[vesselId]?.contains?.find((element) => element.body);
+  function findEmbeddedBodyElement(
+    body: Body,
+    vesselId: string
+  ): (ContainedElement & { index: number }) | undefined {
+    const contains = body.vessels[vesselId]?.contains;
+    const index = contains?.findIndex((element) => element.body) ?? -1;
+    if (index === -1 || !contains) return undefined;
+    return { ...contains[index], index };
   }
 
   function setErrorStatus(error: unknown): void {
@@ -263,18 +260,15 @@
 
     return matchingPreset?.id ?? null;
   }
-
 </script>
 
 <div class="paper-doll-editor">
   <PaperDollCanvas
-    {document}
-    {layout}
+    body={document.body}
     {presentation}
-    {selectedId}
+    selection={rootSelection}
     {status}
     {canDelete}
-    {embeddedBodyView}
     presets={PAPER_DOLL_PRESETS}
     {selectedPresetId}
     {pan}
@@ -282,19 +276,34 @@
     onPresetChange={handlePresetChange}
     onViewControlsChange={handleViewControlsChange}
     onPanChange={(nextPan) => (pan = nextPan)}
-    onSelectNode={selectNode}
-    onOpenEmbeddedBody={openEmbeddedBody}
-    onCloseEmbeddedBody={() => (embeddedBodyView = null)}
-    onAddVessel={addVessel}
-    onAddZone={addZone}
+    onSelect={(target) => selectAt([], target)}
+    onOpenVessel={openVessel}
+    onMutate={(nextBody, meta) => commitBodyAt([], nextBody, meta)}
+    onMutationError={setErrorStatus}
     onDeleteSelected={deleteSelected}
-  />
+  >
+    {#snippet window()}
+      {#if embeddedWindow && windowBody}
+        <VesselWindow
+          body={windowBody}
+          title={embeddedWindow.title}
+          {viewControls}
+          selection={windowSelection}
+          onSelect={(target) => selectAt(embeddedWindow!.path, target)}
+          onOpenVessel={() => {}}
+          onMutate={(nextBody, meta) => commitBodyAt(embeddedWindow!.path, nextBody, meta)}
+          onMutationError={setErrorStatus}
+          onClose={() => (embeddedWindow = null)}
+        />
+      {/if}
+    {/snippet}
+  </PaperDollCanvas>
   <SourcePanel
     source={constructionSource}
     status={sourceStatus}
-    selectedId={selectedId}
+    selectedId={selectedRootVesselId}
     nodeRanges={nodeRanges}
     onSourceChange={handleConstructionSourceChange}
-    onSelectNode={selectNode}
+    onSelectNode={(id) => selectAt([], { kind: "vessel", id })}
   />
 </div>
