@@ -54,6 +54,7 @@
     presentation: Record<string, VesselPresentation>;
     viewControls: ViewControls;
     selection: SelectionTarget | null;
+    excludeVessels?: readonly string[];
     pan: Pan;
     onPanChange: (pan: Pan) => void;
     onSelect: (target: SelectionTarget) => void;
@@ -67,6 +68,7 @@
     presentation,
     viewControls,
     selection,
+    excludeVessels = [],
     pan,
     onPanChange,
     onSelect,
@@ -91,7 +93,7 @@
   let view: RenderView = $derived(getView(viewControls));
   let document: PaperDollDocument = $derived({ protocol: PAPER_DOLL_PROTOCOL, body });
   let layout: DerivedLayout = $derived(deriveLayout(body));
-  let nodes: RenderNode[] = $derived(getRenderNodes(document, layout, presentation));
+  let nodes: RenderNode[] = $derived(getRenderNodes(document, layout, presentation, excludeVessels));
   let bounds: Bounds = $derived(getBounds(nodes, view));
   let nodeById: Map<string, RenderNode> = $derived(new Map(nodes.map((node) => [node.id, node])));
   let selectedVesselId = $derived(selection?.kind === "vessel" ? selection.id : null);

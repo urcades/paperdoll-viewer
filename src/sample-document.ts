@@ -81,11 +81,54 @@ const BACKPACK_BODY: PaperDollDocument["body"] = {
   }
 };
 
+const DRONE_BODY: PaperDollDocument["body"] = {
+  root: "drone-core",
+  vessels: {
+    rotor: {
+      accepts: accepts("rotor"),
+      contains: [item("rotor", "Twin blades")],
+      ports: { bottom: { vessel: "drone-core", side: "top" } }
+    },
+    "drone-core": {
+      accepts: accepts("battery"),
+      contains: [item("battery", "Charge cell")],
+      ports: {
+        top: { vessel: "rotor", side: "bottom" },
+        bottom: { vessel: "sling", side: "top" }
+      }
+    },
+    sling: {
+      accepts: accepts("parcel"),
+      ports: { top: { vessel: "drone-core", side: "bottom" } }
+    }
+  }
+};
+
+// The item pool: a free vessel with open `accepts`, rendered as the play-mode
+// panel instead of a canvas node. Everything in it moves via moveElement.
+const HUMANOID_POOL = [
+  item("head", "Iron circlet"),
+  item("missile", "Bolt case"),
+  item("weapon", "Boarding axe"),
+  item("food", "Trail rations"),
+  { kind: "curio", id: "Weird idol" },
+  {
+    kind: "item",
+    type: "tool",
+    id: "Field kit",
+    data: { weight: 3, notes: "Sealed against rain" }
+  },
+  bodyItem("body", "Message drone", DRONE_BODY)
+];
+
 const HUMANOID_DOCUMENT: PaperDollDocument = {
   protocol: PAPER_DOLL_PROTOCOL,
   body: {
     root: "body",
     vessels: {
+      pool: {
+        contains: HUMANOID_POOL
+      },
       face: {
         accepts: accepts("face"),
         contains: [item("face", "Goggles")],

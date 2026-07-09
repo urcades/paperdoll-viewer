@@ -15,10 +15,14 @@
     status: string;
   };
 
+  type Mode = "construct" | "play";
+
   type Props = {
     body: Body;
     presentation: Record<string, VesselPresentation>;
     selection: SelectionTarget | null;
+    excludeVessels?: readonly string[];
+    mode: Mode;
     status: string;
     canDelete: boolean;
     presets: readonly PaperDollPreset[];
@@ -26,6 +30,7 @@
     pan: Pan;
     viewControls: ViewControls;
     window?: Snippet;
+    onModeChange: (mode: Mode) => void;
     onPresetChange: (presetId: string) => void;
     onViewControlsChange: (controls: ViewControls) => void;
     onPanChange: (pan: Pan) => void;
@@ -40,6 +45,8 @@
     body,
     presentation,
     selection,
+    excludeVessels = [],
+    mode,
     status,
     canDelete,
     presets,
@@ -47,6 +54,7 @@
     pan,
     viewControls,
     window,
+    onModeChange,
     onPresetChange,
     onViewControlsChange,
     onPanChange,
@@ -78,6 +86,10 @@
   <header>
     <div class="status" role="status">{status}</div>
     <div class="canvas-controls" aria-label="Canvas sizing controls">
+      <div class="mode-toggle" role="group" aria-label="Editor mode">
+        <button type="button" data-active={mode === "construct"} onclick={() => onModeChange("construct")}>construct</button>
+        <button type="button" data-active={mode === "play"} onclick={() => onModeChange("play")}>play</button>
+      </div>
       <label>
         <span>body</span>
         <select value={selectedPresetId} onchange={changePreset}>
@@ -132,6 +144,7 @@
     {presentation}
     {viewControls}
     {selection}
+    {excludeVessels}
     {pan}
     {onPanChange}
     {onSelect}

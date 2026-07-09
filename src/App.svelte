@@ -2,12 +2,14 @@
   import {
     deleteVessel,
     disconnect,
+    insertVessel,
     parseDocument,
     type Body,
     type ContainedElement,
     type PaperDollDocument
   } from "paperdoll";
   import PaperDollCanvas from "./PaperDollCanvas.svelte";
+  import PoolPanel from "./PoolPanel.svelte";
   import VesselWindow from "./VesselWindow.svelte";
   import SourcePanel from "./SourcePanel.svelte";
   import {
@@ -71,6 +73,7 @@
   let pan: Pan = $state({ x: 0, y: 0 });
   let viewControls: ViewControls = $state(structuredClone(INITIAL_VIEW_CONTROLS));
   let embeddedWindow = $state<EmbeddedWindow | null>(null);
+  let mode = $state<"construct" | "play">("construct");
 
   let windowBody: Body | null = $derived(embeddedWindow ? getBodyAtPath(document.body, embeddedWindow.path) : null);
   let rootSelection: SelectionTarget | null = $derived(
@@ -85,6 +88,17 @@
     formatConstructionSource(DEFAULT_DOCUMENT, VESSEL_PRESENTATION, INITIAL_VIEW_CONTROLS)
   );
   let nodeRanges = $derived(getConstructionNodeRanges(constructionSource));
+  let poolElements = $derived(document.body.vessels.pool?.contains ?? []);
+
+  function setMode(nextMode: "construct" | "play"): void {
+    mode = nextMode;
+    if (nextMode === "play" && !document.body.vessels.pool) {
+      const result = insertVessel($state.snapshot(document.body) as Body, {}, { id: "pool" });
+      commitBodyAt([], result.body, { status: "Entered play mode with an empty pool" });
+      return;
+    }
+    status = nextMode === "play" ? "Play mode: drag items between pool and vessels" : "Construct mode";
+  }
 
   function computeCanDelete(current: Selection | null): boolean {
     if (!current) return false;
@@ -292,12 +306,15 @@
     body={document.body}
     {presentation}
     selection={rootSelection}
+    excludeVessels={["pool"]}
+    {mode}
     {status}
     {canDelete}
     presets={PAPER_DOLL_PRESETS}
     {selectedPresetId}
     {pan}
     viewControls={viewControls}
+    onModeChange={setMode}
     onPresetChange={handlePresetChange}
     onViewControlsChange={handleViewControlsChange}
     onPanChange={(nextPan) => (pan = nextPan)}
@@ -323,12 +340,16 @@
       {/if}
     {/snippet}
   </PaperDollCanvas>
-  <SourcePanel
-    source={constructionSource}
-    status={sourceStatus}
-    selectedId={selectedRootVesselId}
-    nodeRanges={nodeRanges}
-    onSourceChange={handleConstructionSourceChange}
-    onSelectNode={(id) => selectAt([], { kind: "vessel", id })}
-  />
+  {#if mode === "construct"}
+    <SourcePanel
+      source={constructionSource}
+      status={sourceStatus}
+      selectedId={selectedRootVesselId}
+      nodeRanges={nodeRanges}
+      onSourceChange={handleConstructionSourceChange}
+      onSelectNode={(id) => selectAt([], { kind: "vessel", id })}
+    />
+  {:else}
+    <PoolPanel elements={poolElements} />
+  {/if}
 </div>

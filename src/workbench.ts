@@ -76,15 +76,17 @@ export function getView(controls: ViewControls): RenderView {
 export function getRenderNodes(
   document: PaperDollDocument,
   layout: DerivedLayout,
-  presentation: Record<string, VesselPresentation>
+  presentation: Record<string, VesselPresentation>,
+  excludeIds: readonly string[] = []
 ): RenderNode[] {
-  const figureNodes = Object.entries(layout.figure).map(([id, position]) =>
-    toRenderNode(document, presentation, id, position, "figure")
-  );
+  const excluded = new Set(excludeIds);
+  const figureNodes = Object.entries(layout.figure)
+    .filter(([id]) => !excluded.has(id))
+    .map(([id, position]) => toRenderNode(document, presentation, id, position, "figure"));
   const figureBottom = Math.max(0, ...figureNodes.map((node) => node.y));
-  const freeNodes = layout.free.map((id, index) =>
-    toRenderNode(document, presentation, id, { x: index, y: figureBottom + 2 }, "free")
-  );
+  const freeNodes = layout.free
+    .filter((id) => !excluded.has(id))
+    .map((id, index) => toRenderNode(document, presentation, id, { x: index, y: figureBottom + 2 }, "free"));
   return [...figureNodes, ...freeNodes];
 }
 
