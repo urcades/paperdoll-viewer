@@ -22,6 +22,8 @@
     presentation: Record<string, VesselPresentation>;
     selection: SelectionTarget | null;
     excludeVessels?: readonly string[];
+    dropTargets?: ReadonlySet<string> | null;
+    rejectVesselId?: string | null;
     mode: Mode;
     status: string;
     canDelete: boolean;
@@ -46,6 +48,8 @@
     presentation,
     selection,
     excludeVessels = [],
+    dropTargets = null,
+    rejectVesselId = null,
     mode,
     status,
     canDelete,
@@ -145,6 +149,8 @@
     {viewControls}
     {selection}
     {excludeVessels}
+    {dropTargets}
+    {rejectVesselId}
     {pan}
     {onPanChange}
     {onSelect}

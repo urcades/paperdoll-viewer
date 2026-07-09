@@ -3,6 +3,7 @@
     deleteVessel,
     disconnect,
     insertVessel,
+    moveElement,
     parseDocument,
     type Body,
     type ContainedElement,
@@ -30,7 +31,9 @@
   } from "./construction-source";
   import {
     canDisconnect,
+    describeElement,
     getBodyAtPath,
+    legalDropVessels,
     pathsEqual,
     replaceBodyAtPath,
     type BodyPath,
@@ -58,6 +61,20 @@
     status: string;
   };
 
+  type ElementDrag = {
+    pointerId: number;
+    path: BodyPath;
+    vessel: string;
+    index: number;
+    element: ContainedElement;
+    targets: Set<string>;
+    active: boolean;
+    originX: number;
+    originY: number;
+    x: number;
+    y: number;
+  };
+
   const INITIAL_VIEW_CONTROLS: ViewControls = {
     node: DEFAULT_NODE_SIZE,
     connector: DEFAULT_CONNECTOR_LENGTH,
@@ -74,6 +91,9 @@
   let viewControls: ViewControls = $state(structuredClone(INITIAL_VIEW_CONTROLS));
   let embeddedWindow = $state<EmbeddedWindow | null>(null);
   let mode = $state<"construct" | "play">("construct");
+  let elementDrag = $state<ElementDrag | null>(null);
+  let rejectFlash = $state<{ path: BodyPath; vessel: string } | null>(null);
+  let rejectTimer: ReturnType<typeof setTimeout> | undefined;
 
   let windowBody: Body | null = $derived(embeddedWindow ? getBodyAtPath(document.body, embeddedWindow.path) : null);
   let rootSelection: SelectionTarget | null = $derived(
@@ -89,6 +109,98 @@
   );
   let nodeRanges = $derived(getConstructionNodeRanges(constructionSource));
   let poolElements = $derived(document.body.vessels.pool?.contains ?? []);
+  let rootDropTargets = $derived(
+    elementDrag?.active && pathsEqual(elementDrag.path, []) ? elementDrag.targets : null
+  );
+  let rootRejectVesselId = $derived(
+    rejectFlash && pathsEqual(rejectFlash.path, []) ? rejectFlash.vessel : null
+  );
+
+  function beginElementDrag(event: PointerEvent, path: BodyPath, vesselId: string, index: number): void {
+    if (event.button !== 0) return;
+    const body = getBodyAtPath(document.body, path);
+    const element = body?.vessels[vesselId]?.contains?.[index];
+    if (!body || !element) return;
+
+    event.preventDefault();
+    elementDrag = {
+      pointerId: event.pointerId,
+      path,
+      vessel: vesselId,
+      index,
+      element,
+      targets: new Set(legalDropVessels(body, element, vesselId)),
+      active: false,
+      originX: event.clientX,
+      originY: event.clientY,
+      x: event.clientX,
+      y: event.clientY
+    };
+    (event.currentTarget as Element).setPointerCapture(event.pointerId);
+  }
+
+  function updateElementDrag(event: PointerEvent): void {
+    if (!elementDrag || event.pointerId !== elementDrag.pointerId) return;
+    const active =
+      elementDrag.active ||
+      Math.hypot(event.clientX - elementDrag.originX, event.clientY - elementDrag.originY) >= 4;
+    elementDrag = { ...elementDrag, active, x: event.clientX, y: event.clientY };
+  }
+
+  function endElementDrag(event: PointerEvent): void {
+    if (!elementDrag || event.pointerId !== elementDrag.pointerId) return;
+    const drag = elementDrag;
+    elementDrag = null;
+    if (!drag.active) return;
+
+    const dropped = window.document.elementFromPoint(event.clientX, event.clientY);
+    const targetVessel = resolveDropVessel(drag, dropped);
+    if (!targetVessel || targetVessel === drag.vessel) return;
+
+    const body = getBodyAtPath(document.body, drag.path);
+    if (!body) return;
+
+    if (!drag.targets.has(targetVessel)) {
+      const accepts = body.vessels[targetVessel]?.accepts;
+      const acceptsLabel = accepts === undefined
+        ? "anything"
+        : accepts.length === 0
+          ? "nothing (sealed)"
+          : accepts.map((token) => (token.type ? `${token.kind}/${token.type}` : token.kind)).join(", ");
+      status = `${targetVessel} does not accept ${drag.element.type ? `${drag.element.kind}/${drag.element.type}` : drag.element.kind} — accepts ${acceptsLabel}`;
+      rejectFlash = { path: drag.path, vessel: targetVessel };
+      clearTimeout(rejectTimer);
+      rejectTimer = setTimeout(() => (rejectFlash = null), 450);
+      return;
+    }
+
+    try {
+      const nextBody = moveElement(body, drag.vessel, drag.index, targetVessel);
+      commitBodyAt(drag.path, nextBody, {
+        select: { kind: "vessel", id: targetVessel },
+        status: `Moved ${describeElement(drag.element)} to ${targetVessel}`
+      });
+    } catch (error) {
+      setErrorStatus(error);
+    }
+  }
+
+  // Same-surface rule: a drag that started in a body may only drop on vessels
+  // of that same body — moveElement never crosses body boundaries.
+  function resolveDropVessel(drag: ElementDrag, dropped: Element | null): string | null {
+    if (!dropped) return null;
+    if (dropped.closest(".pool-panel")) {
+      return pathsEqual(drag.path, []) ? "pool" : null;
+    }
+
+    const slot = dropped.closest(".slot");
+    if (!slot) return null;
+    const inWindow = Boolean(dropped.closest(".embedded-body-window"));
+    const sameSurface = pathsEqual(drag.path, [])
+      ? !inWindow
+      : Boolean(inWindow && embeddedWindow && pathsEqual(drag.path, embeddedWindow.path));
+    return sameSurface ? ((slot as HTMLElement).dataset.nodeId ?? null) : null;
+  }
 
   function setMode(nextMode: "construct" | "play"): void {
     mode = nextMode;
@@ -307,6 +419,8 @@
     {presentation}
     selection={rootSelection}
     excludeVessels={["pool"]}
+    dropTargets={rootDropTargets}
+    rejectVesselId={rootRejectVesselId}
     {mode}
     {status}
     {canDelete}
@@ -350,6 +464,16 @@
       onSelectNode={(id) => selectAt([], { kind: "vessel", id })}
     />
   {:else}
-    <PoolPanel elements={poolElements} />
+    <PoolPanel
+      elements={poolElements}
+      onElementPointerDown={(event, index) => beginElementDrag(event, [], "pool", index)}
+      onElementPointerMove={updateElementDrag}
+      onElementPointerUp={endElementDrag}
+    />
+  {/if}
+  {#if elementDrag?.active}
+    <div class="drag-ghost" style:left={`${elementDrag.x + 12}px`} style:top={`${elementDrag.y + 12}px`}>
+      {describeElement(elementDrag.element)}
+    </div>
   {/if}
 </div>

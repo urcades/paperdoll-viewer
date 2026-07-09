@@ -444,6 +444,39 @@ paper-doll-editor {
   opacity: 0.5;
 }
 
+.pool-row {
+  touch-action: none;
+}
+
+.drag-ghost {
+  position: fixed;
+  z-index: 10;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  background: var(--background);
+  color: var(--foreground);
+  pointer-events: none;
+}
+
+.slot[data-drop="legal"] .box {
+  box-shadow: inset 0 0 0 calc(var(--node-line-width) * 2) var(--add-highlight);
+}
+
+.slot[data-drop="illegal"] {
+  opacity: 0.25;
+}
+
+.slot[data-reject="true"] .box {
+  animation: reject-shake 0.4s;
+}
+
+@keyframes reject-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  50% { transform: translateX(4px); }
+  75% { transform: translateX(-4px); }
+}
+
 .status {
   min-width: 0;
 }

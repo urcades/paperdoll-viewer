@@ -55,6 +55,8 @@
     viewControls: ViewControls;
     selection: SelectionTarget | null;
     excludeVessels?: readonly string[];
+    dropTargets?: ReadonlySet<string> | null;
+    rejectVesselId?: string | null;
     pan: Pan;
     onPanChange: (pan: Pan) => void;
     onSelect: (target: SelectionTarget) => void;
@@ -69,6 +71,8 @@
     viewControls,
     selection,
     excludeVessels = [],
+    dropTargets = null,
+    rejectVesselId = null,
     pan,
     onPanChange,
     onSelect,
@@ -366,6 +370,8 @@
         class="slot"
         data-node-id={node.id}
         data-kind={node.kind}
+        data-drop={dropTargets ? (dropTargets.has(node.id) ? "legal" : "illegal") : undefined}
+        data-reject={node.id === rejectVesselId ? "true" : undefined}
         style:left={`${point.x}px`}
         style:top={`${point.y}px`}
         role="button"

@@ -1,10 +1,12 @@
 import {
   connect,
   disconnect,
+  isAccepted,
   OPPOSITE_SIDES,
   PAPER_DOLL_PROTOCOL,
   validateDocument,
   type Body,
+  type ContainedElement,
   type DerivedLayout,
   type DerivedPosition,
   type Endpoint,
@@ -194,6 +196,20 @@ export function legalConnectTargets(body: Body, from: Endpoint): Endpoint[] {
     }
   }
   return targets;
+}
+
+export function legalDropVessels(
+  body: Body,
+  element: ContainedElement,
+  sourceVesselId: VesselId
+): VesselId[] {
+  return Object.keys(body.vessels).filter(
+    (id) => id !== sourceVesselId && isAccepted(body.vessels[id], element)
+  );
+}
+
+export function describeElement(element: ContainedElement): string {
+  return element.id ?? (element.type ? `${element.kind}/${element.type}` : element.kind);
 }
 
 export function generatePresentation(body: Body): Record<string, VesselPresentation> {

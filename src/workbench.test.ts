@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { connect, deleteVessel, deriveLayout, insertVessel, parseDocument } from "paperdoll";
+import { connect, deleteVessel, deriveLayout, insertVessel, parseDocument, type Body } from "paperdoll";
 import {
   DEFAULT_CANVAS_PADDING,
   DEFAULT_CONNECTOR_LENGTH,
@@ -13,6 +13,7 @@ import {
   canDisconnect,
   generatePresentation,
   legalConnectTargets,
+  legalDropVessels,
   getBodyAtPath,
   getBounds,
   getRenderNodes,
@@ -276,6 +277,26 @@ describe("body path helpers", () => {
     // e.g. hanging below feet-row leaves: any vessel with a free bottom port and empty cell below
     expect(targets.length).toBeGreaterThan(0);
     expect(targets.every((target) => target.side === "bottom")).toBe(true);
+  });
+
+  it("computes legal drop vessels via the compatibility judgment", () => {
+    const circlet = { kind: "item", type: "head" };
+    const idol = { kind: "curio", id: "Weird idol" };
+
+    const headTargets = legalDropVessels(DEFAULT_DOCUMENT.body, circlet, "pool");
+    // typed vessels admit matching elements; the open pool would too but is the source
+    expect(headTargets).toContain("head");
+    expect(headTargets).not.toContain("feet");
+
+    // a kind no vessel accepts can go nowhere but back to the open pool
+    expect(legalDropVessels(DEFAULT_DOCUMENT.body, idol, "head")).toEqual(["pool"]);
+
+    // absent accepts = open, [] = sealed
+    const modes: Body = {
+      root: "open",
+      vessels: { open: {}, sealed: { accepts: [] } }
+    };
+    expect(legalDropVessels(modes, idol, "none")).toEqual(["open"]);
   });
 
   it("generates presentation for arbitrary bodies", () => {
