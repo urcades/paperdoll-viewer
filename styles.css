@@ -415,35 +415,6 @@ paper-doll-editor {
   min-height: 0;
 }
 
-.embedded-body-viewport {
-  position: relative;
-  min-height: 0;
-  overflow: hidden;
-  cursor: grab;
-  touch-action: none;
-  user-select: none;
-}
-
-.embedded-body-viewport[data-panning="true"] {
-  cursor: grabbing;
-}
-
-.embedded-body-canvas {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: var(--embedded-width);
-  height: var(--embedded-height);
-  min-width: var(--embedded-width);
-  min-height: var(--embedded-height);
-  transform: translate(calc(-50% + var(--pan-x, 0px)), calc(-50% + var(--pan-y, 0px)));
-}
-
-.embedded-slot {
-  width: var(--node);
-  height: var(--node);
-}
-
 .source-panel {
   display: grid;
   grid-template-rows: var(--header-height) 1fr;

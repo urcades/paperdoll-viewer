@@ -50,8 +50,15 @@ detail window onto the panel → `moveElement` back to pool).
 ## 3. Drag-and-drop of elements
 
 Drag sources: pool rows, and element rows in vessel detail windows (§4).
-Drop targets: vessel nodes on the canvas (any depth), pool panel, element lists in
-open detail windows.
+Drop targets: vessel nodes on the same-surface canvas, and the pool panel.
+
+**Same-surface only** (decided 2026-07-09): `moveElement` operates within one
+body, so drags are offered only between vessels of the same surface (pool ↔ root
+vessels; backpack pouch ↔ backpack pouch). Cross-depth drags are simply not
+offered, consistent with "the UI only offers legal moves". To keep the
+same-surface canvas visible as a drop target at depth, vessels double-clicked
+inside a window's canvas open as a bottom **drawer** rather than replacing the
+canvas (§4).
 
 - On drag start, compute legal targets with `isAccepted(vessel, element)` and
   visually mark them (illegal targets dimmed; legal targets highlighted on hover).
