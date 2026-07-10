@@ -579,6 +579,27 @@ paper-doll-editor {
   min-width: 0;
 }
 
+.body-select {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.status-toast {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  z-index: 5;
+  max-width: min(560px, calc(100% - 48px));
+  padding: 6px 14px;
+  border: 1px solid var(--line);
+  background: var(--background);
+  color: var(--foreground);
+  text-align: center;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
 .canvas-controls {
   display: flex;
   flex-wrap: wrap;

@@ -105,19 +105,18 @@
 
 <section class="surface" aria-label="Paper doll preview">
   <header>
-    <div class="status" role="status">{status}</div>
-    <div class="canvas-controls" aria-label="Canvas sizing controls">
-      <label>
-        <span>body</span>
-        <select value={selectedPresetId} onchange={changePreset}>
-          {#if selectedPresetId === "custom"}
-            <option value="custom">Custom</option>
-          {/if}
-          {#each presets as preset (preset.id)}
-            <option value={preset.id}>{preset.name}</option>
-          {/each}
-        </select>
-      </label>
+    <label class="body-select">
+      <span>body</span>
+      <select value={selectedPresetId} onchange={changePreset}>
+        {#if selectedPresetId === "custom"}
+          <option value="custom">Custom</option>
+        {/if}
+        {#each presets as preset (preset.id)}
+          <option value={preset.id}>{preset.name}</option>
+        {/each}
+      </select>
+    </label>
+    <div class="canvas-controls" aria-label="Canvas actions">
       <!-- Sizing controls hidden for now; re-enable to adjust canvas element sizes.
       <label>
         <span>vessel</span>
@@ -193,5 +192,8 @@
     {onMutate}
     {onMutationError}
   />
+  {#if status}
+    <div class="status-toast" role="status">{status}</div>
+  {/if}
   {@render window?.()}
 </section>
