@@ -205,6 +205,55 @@ describe("versus arena relations", () => {
     expect(restored.bodies.red.vessels["right-hand"].ports).toBeDefined();
   });
 
+  it("prunes relations anchored inside an embedded body when severed there", () => {
+    // A relation reaching through element.body: red wields a dagger stored in
+    // a belt-pouch embedded body hanging off the torso.
+    let scene = arena();
+    const red = structuredClone(scene.bodies.red);
+    red.vessels.torso.contains = [
+      ...(red.vessels.torso.contains ?? []),
+      {
+        kind: "item",
+        type: "mail",
+        id: "belt-pouch",
+        body: {
+          root: "pouch",
+          vessels: {
+            pouch: { ports: { bottom: { vessel: "sheath", side: "top" } } },
+            sheath: {
+              contains: [{ kind: "item", type: "dagger", id: "pouch-dagger" }],
+              ports: { top: { vessel: "pouch", side: "bottom" } }
+            }
+          }
+        }
+      }
+    ];
+    scene = replaceBodyInScene(scene, "red", red);
+    scene = addRelation(scene, {
+      kind: "wields",
+      from: "red/left-hand",
+      to: "red/torso/belt-pouch/sheath/pouch-dagger"
+    });
+    expect(validateScene(scene)).toEqual([]);
+
+    // Sever INSIDE the embedded body: the sheath detaches into a free vessel
+    // of the pouch body. It still exists, so the endpoint still resolves —
+    // only the per-scope reachability walk can see it dangling.
+    const severedRed = structuredClone(scene.bodies.red);
+    const pouch = severedRed.vessels.torso.contains!.find((element) => element.id === "belt-pouch")!;
+    delete pouch.body!.vessels.pouch.ports;
+    delete pouch.body!.vessels.sheath.ports;
+    const candidate = replaceBodyInScene(scene, "red", severedRed);
+
+    const pruned = pruneDanglingRelations(candidate);
+    expect(pruned.removed.map((relation) => relation.to)).toEqual(["red/torso/belt-pouch/sheath/pouch-dagger"]);
+    // The top-level wields relation on the arena sword is untouched.
+    expect(pruned.scene.relations).toEqual([
+      { kind: "wields", from: "red/right-hand", to: "red/right-hand/arena-sword" }
+    ]);
+    expect(validateScene(pruned.scene)).toEqual([]);
+  });
+
   it("prunes relations whose endpoint vessel was deleted outright", () => {
     let scene = arena();
     scene = addRelation(scene, { kind: "grapples", from: "red/left-hand", to: "blue/right-hand" });

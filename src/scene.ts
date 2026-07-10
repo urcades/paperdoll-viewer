@@ -65,9 +65,8 @@ export function figureBodyNames(scene: Scene): string[] {
  * scene ops in the same history entry).
  */
 export function pruneDanglingRelations(scene: Scene): { scene: Scene; removed: Relation[] } {
-  const reachableByBody = new Map<string, Set<string>>();
   const endpointHolds = (address: string): boolean => {
-    const { bodyName } = splitSceneAddress(address);
+    const { bodyName, address: rest } = splitSceneAddress(address);
     const body = scene.bodies[bodyName];
     if (!body) return false;
     let resolved;
@@ -77,10 +76,23 @@ export function pruneDanglingRelations(scene: Scene): { scene: Scene; removed: R
       return false;
     }
     if (!resolved) return false;
-    if (!reachableByBody.has(bodyName)) reachableByBody.set(bodyName, reachableVessels(body));
-    const reachable = reachableByBody.get(bodyName)!;
-    const anchorVessel = splitSceneAddress(address).address.split("/")[0];
-    return reachable.has(anchorVessel) || anchorVessel === body.root;
+    // Walk the whole vessel/(elementId/vessel)* chain: at every scope —
+    // including embedded bodies — the addressed vessel must still be
+    // port-reachable from that scope's own root, so severing deep inside a
+    // nested body drops relations anchored there too.
+    const segments = rest.split("/");
+    let scope = body;
+    for (let position = 0; position < segments.length; position += 2) {
+      const vesselId = segments[position];
+      if (vesselId !== scope.root && !reachableVessels(scope).has(vesselId)) return false;
+      const elementId = segments[position + 1];
+      if (elementId === undefined) break;
+      const element = scope.vessels[vesselId]?.contains?.find((candidate) => candidate.id === elementId);
+      if (!element) return false;
+      if (element.body === undefined) break; // the endpoint is the element itself
+      scope = element.body;
+    }
+    return true;
   };
 
   const removed: Relation[] = [];
