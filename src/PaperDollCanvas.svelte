@@ -27,6 +27,7 @@
     mode: Mode;
     status: string;
     canDelete: boolean;
+    canDamage: boolean;
     presets: readonly PaperDollPreset[];
     selectedPresetId: string;
     pan: Pan;
@@ -41,6 +42,8 @@
     onMutate: (nextBody: Body, meta: MutationMeta) => void;
     onMutationError: (error: unknown) => void;
     onDeleteSelected: () => void;
+    onDamage: () => void;
+    onHeal: () => void;
   };
 
   let {
@@ -53,6 +56,7 @@
     mode,
     status,
     canDelete,
+    canDamage,
     presets,
     selectedPresetId,
     pan,
@@ -66,7 +70,9 @@
     onOpenVessel,
     onMutate,
     onMutationError,
-    onDeleteSelected
+    onDeleteSelected,
+    onDamage,
+    onHeal
   }: Props = $props();
 
   function updateViewControl(key: keyof ViewControls, event: Event): void {
@@ -140,6 +146,10 @@
         />
       </label>
       -->
+      {#if canDamage}
+        <button class="damage-button" type="button" onclick={onDamage}>damage</button>
+        <button class="heal-button" type="button" onclick={onHeal}>heal</button>
+      {/if}
       <button class="delete-node" type="button" disabled={!canDelete} onclick={onDeleteSelected}>delete</button>
     </div>
   </header>

@@ -1,10 +1,12 @@
 import {
   connect,
   disconnect,
+  insertElement,
   isAccepted,
   OPPOSITE_SIDES,
   PAPER_DOLL_PROTOCOL,
   parseAddress,
+  removeElement,
   resolveAddress,
   validateDocument,
   type Body,
@@ -12,7 +14,9 @@ import {
   type DerivedLayout,
   type DerivedPosition,
   type Endpoint,
+  type JsonValue,
   type PaperDollDocument,
+  type Vessel,
   type VesselId
 } from "paperdoll";
 import type { VesselPresentation } from "./sample-document";
@@ -66,6 +70,7 @@ export type RenderNode = {
   icon?: string;
   accepts?: readonly string[];
   item?: string;
+  hp?: { current: number; max: number };
 };
 
 export function getView(controls: ViewControls): RenderView {
@@ -131,8 +136,20 @@ function toRenderNode(
     label: vesselPresentation?.label ?? id,
     icon: vesselPresentation?.icon,
     accepts: vessel?.accepts?.map((token) => (token.type ? `${token.kind}/${token.type}` : token.kind)),
-    item: vessel?.contains?.map(formatElement).join(", ")
+    item: vessel?.contains?.map(formatElement).join(", "),
+    hp: findHp(vessel?.contains)
   };
+}
+
+function findHp(contains: Vessel["contains"]): RenderNode["hp"] {
+  for (const element of contains ?? []) {
+    const data = element.data;
+    if (data && typeof data === "object" && !Array.isArray(data)) {
+      const { hp, max } = data as { hp?: unknown; max?: unknown };
+      if (typeof hp === "number" && typeof max === "number") return { current: hp, max };
+    }
+  }
+  return undefined;
 }
 
 function formatElement(element: { kind: string; type?: string; id?: string }): string {
@@ -214,6 +231,13 @@ export function legalDropVessels(
   return Object.keys(body.vessels).filter(
     (id) => id !== sourceVesselId && isAccepted(body.vessels[id], element)
   );
+}
+
+// The protocol has no update-element operation; a data write is the honest
+// composition remove + insert-at-same-position.
+export function replaceElementData(body: Body, vesselId: VesselId, index: number, data: JsonValue): Body {
+  const { body: without, element } = removeElement(body, vesselId, index);
+  return insertElement(without, vesselId, { ...element, data }, index);
 }
 
 export function describeElement(element: ContainedElement): string {

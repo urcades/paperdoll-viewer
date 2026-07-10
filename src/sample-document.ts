@@ -551,6 +551,77 @@ const HAND_PRESENTATION: Record<string, VesselPresentation> = {
   "pinky-tip": { label: "Pinky\nTip", icon: "J" }
 };
 
+// The patient: every vessel contains a "part" element whose data carries hp.
+// Health lives on elements (vessels have no data field by design) — damage is
+// a data rewrite, expressed as the protocol composition remove + insert-at.
+const part = (max: number) => ({
+  kind: "part",
+  type: "flesh",
+  id: "flesh",
+  data: { hp: max, max }
+});
+
+const bodyPart = (max: number, ports: NonNullable<PaperDollDocument["body"]["vessels"][string]["ports"]>) => ({
+  accepts: [{ kind: "part" }],
+  contains: [part(max)],
+  ports
+});
+
+const PATIENT_DOCUMENT: PaperDollDocument = {
+  protocol: PAPER_DOLL_PROTOCOL,
+  body: {
+    root: "torso",
+    vessels: {
+      head: bodyPart(8, { bottom: { vessel: "torso", side: "top" } }),
+      "left-hand": bodyPart(6, { right: { vessel: "left-arm", side: "left" } }),
+      "left-arm": bodyPart(12, {
+        left: { vessel: "left-hand", side: "right" },
+        right: { vessel: "torso", side: "left" }
+      }),
+      torso: bodyPart(20, {
+        top: { vessel: "head", side: "bottom" },
+        left: { vessel: "left-arm", side: "right" },
+        right: { vessel: "right-arm", side: "left" },
+        bottom: { vessel: "hips", side: "top" }
+      }),
+      "right-arm": bodyPart(12, {
+        left: { vessel: "torso", side: "right" },
+        right: { vessel: "right-hand", side: "left" }
+      }),
+      "right-hand": bodyPart(6, { left: { vessel: "right-arm", side: "right" } }),
+      hips: bodyPart(14, {
+        top: { vessel: "torso", side: "bottom" },
+        left: { vessel: "left-leg", side: "right" },
+        right: { vessel: "right-leg", side: "left" }
+      }),
+      "left-leg": bodyPart(14, {
+        right: { vessel: "hips", side: "left" },
+        bottom: { vessel: "left-foot", side: "top" }
+      }),
+      "right-leg": bodyPart(14, {
+        left: { vessel: "hips", side: "right" },
+        bottom: { vessel: "right-foot", side: "top" }
+      }),
+      "left-foot": bodyPart(6, { top: { vessel: "left-leg", side: "bottom" } }),
+      "right-foot": bodyPart(6, { top: { vessel: "right-leg", side: "bottom" } })
+    }
+  }
+};
+
+const PATIENT_PRESENTATION: Record<string, VesselPresentation> = {
+  head: { label: "Head", icon: "A" },
+  "left-hand": { label: "Left\nHand", icon: "B" },
+  "left-arm": { label: "Left\nArm", icon: "C" },
+  torso: { label: "Torso", icon: "@" },
+  "right-arm": { label: "Right\nArm", icon: "D" },
+  "right-hand": { label: "Right\nHand", icon: "E" },
+  hips: { label: "Hips", icon: "F" },
+  "left-leg": { label: "Left\nLeg", icon: "G" },
+  "right-leg": { label: "Right\nLeg", icon: "H" },
+  "left-foot": { label: "Left\nFoot", icon: "I" },
+  "right-foot": { label: "Right\nFoot", icon: "J" }
+};
+
 export const PAPER_DOLL_PRESETS: readonly PaperDollPreset[] = [
   {
     id: "humanoid",
@@ -581,6 +652,12 @@ export const PAPER_DOLL_PRESETS: readonly PaperDollPreset[] = [
     name: "Human Hand",
     document: HAND_DOCUMENT,
     presentation: HAND_PRESENTATION
+  },
+  {
+    id: "patient",
+    name: "Patient",
+    document: PATIENT_DOCUMENT,
+    presentation: PATIENT_PRESENTATION
   }
 ];
 

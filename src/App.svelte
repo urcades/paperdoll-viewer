@@ -33,6 +33,7 @@
     canDisconnect,
     describeElement,
     getBodyAtAddress,
+    replaceElementData,
     joinAddress,
     legalDropVessels,
     replaceBodyAtAddress,
@@ -131,6 +132,7 @@
   );
   let nodeRanges = $derived(getConstructionNodeRanges(constructionSource));
   let poolElements = $derived(document.body.vessels.pool?.contains ?? []);
+  let canDamage = $derived(findParts(document.body).length > 0);
   let rootDropTargets = $derived(
     elementDrag?.active && elementDrag.address === ROOT_ADDRESS ? elementDrag.targets : null
   );
@@ -230,6 +232,61 @@
       ? windowCanvasAddress !== null && drag.address === windowCanvasAddress
       : drag.address === ROOT_ADDRESS;
     return sameSurface ? ((slot as HTMLElement).dataset.nodeId ?? null) : null;
+  }
+
+  type PartRef = {
+    vessel: string;
+    index: number;
+    hp: number;
+    max: number;
+    data: Record<string, unknown>;
+  };
+
+  function findParts(body: Body): PartRef[] {
+    return Object.entries(body.vessels).flatMap(([vesselId, vessel]) =>
+      (vessel.contains ?? []).flatMap((element, index) => {
+        const data = element.data;
+        if (!data || typeof data !== "object" || Array.isArray(data)) return [];
+        const { hp, max } = data as { hp?: unknown; max?: unknown };
+        if (typeof hp !== "number" || typeof max !== "number") return [];
+        return [{ vessel: vesselId, index, hp, max, data: data as Record<string, unknown> }];
+      })
+    );
+  }
+
+  function damageRandomPart(): void {
+    try {
+      const body = $state.snapshot(document.body) as Body;
+      const living = findParts(body).filter((partRef) => partRef.hp > 0);
+      if (living.length === 0) {
+        status = "Nothing left to damage — heal first";
+        return;
+      }
+
+      const target = living[Math.floor(Math.random() * living.length)];
+      const amount = 1 + Math.floor(Math.random() * 6);
+      const hp = Math.max(0, target.hp - amount);
+      const nextBody = replaceElementData(body, target.vessel, target.index, { ...target.data, hp });
+      commitBodyAt(ROOT_ADDRESS, nextBody, {
+        select: { kind: "vessel", id: target.vessel },
+        status: `${target.vessel} took ${amount} — ${hp}/${target.max}${hp === 0 ? " — destroyed" : ""}`
+      });
+    } catch (error) {
+      setErrorStatus(error);
+    }
+  }
+
+  function healAllParts(): void {
+    try {
+      let body = $state.snapshot(document.body) as Body;
+      for (const partRef of findParts(body)) {
+        if (partRef.hp === partRef.max) continue;
+        body = replaceElementData(body, partRef.vessel, partRef.index, { ...partRef.data, hp: partRef.max });
+      }
+      commitBodyAt(ROOT_ADDRESS, body, { status: "All parts restored" });
+    } catch (error) {
+      setErrorStatus(error);
+    }
   }
 
   function setMode(nextMode: "construct" | "play"): void {
@@ -494,6 +551,7 @@
     {mode}
     {status}
     {canDelete}
+    {canDamage}
     presets={PAPER_DOLL_PRESETS}
     {selectedPresetId}
     {pan}
@@ -507,6 +565,8 @@
     onMutate={(nextBody, meta) => commitBodyAt(ROOT_ADDRESS, nextBody, meta)}
     onMutationError={setErrorStatus}
     onDeleteSelected={deleteSelected}
+    onDamage={damageRandomPart}
+    onHeal={healAllParts}
   >
     {#snippet window()}
       {#if vesselWindow && windowVessel}

@@ -15,6 +15,7 @@ import {
   joinAddress,
   legalConnectTargets,
   legalDropVessels,
+  replaceElementData,
   getBodyAtAddress,
   getBounds,
   getRenderNodes,
@@ -35,7 +36,7 @@ describe("paperdoll viewer construction flow", () => {
   });
 
   it("ships valid selectable body presets", () => {
-    expect(PAPER_DOLL_PRESETS.map((preset) => preset.id)).toEqual(["humanoid", "mech", "vehicle", "satellite", "hand"]);
+    expect(PAPER_DOLL_PRESETS.map((preset) => preset.id)).toEqual(["humanoid", "mech", "vehicle", "satellite", "hand", "patient"]);
 
     for (const preset of PAPER_DOLL_PRESETS) {
       const parsed = parseDocument(preset.document);
@@ -314,6 +315,23 @@ describe("body address helpers", () => {
       vessels: { open: {}, sealed: { accepts: [] } }
     };
     expect(legalDropVessels(modes, idol, "none")).toEqual(["open"]);
+  });
+
+  it("rewrites element data as a remove + insert-at composition", () => {
+    const patient = PAPER_DOLL_PRESETS.find((preset) => preset.id === "patient")!.document.body;
+    const damaged = replaceElementData(patient, "head", 0, { hp: 3, max: 8 });
+
+    expect(damaged.vessels.head.contains?.[0]).toMatchObject({
+      kind: "part",
+      id: "flesh",
+      data: { hp: 3, max: 8 }
+    });
+    // same position, same identity, untouched siblings (protocol ops deep-clone)
+    expect(damaged.vessels.head.contains?.length).toBe(1);
+    expect(damaged.vessels.torso).toStrictEqual(patient.vessels.torso);
+    expect(parseDocument({ protocol: "paper-doll/v3", body: damaged }).ok).toBe(true);
+    // original untouched
+    expect(patient.vessels.head.contains?.[0].data).toMatchObject({ hp: 8 });
   });
 
   it("generates presentation for arbitrary bodies", () => {

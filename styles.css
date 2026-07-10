@@ -517,6 +517,25 @@ paper-doll-editor {
   animation: reject-shake 0.4s;
 }
 
+.slot[data-dead="true"] .box {
+  background: var(--foreground);
+  color: var(--background);
+}
+
+.slot[data-dead="true"] + .slot-label,
+.slot-label[data-dead="true"] {
+  opacity: 0.5;
+}
+
+.damage-button,
+.heal-button {
+  padding: 2px 10px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+}
+
 @keyframes reject-shake {
   0%, 100% { transform: translateX(0); }
   25% { transform: translateX(-4px); }
