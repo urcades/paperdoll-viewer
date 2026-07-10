@@ -26,6 +26,7 @@
     type ViewControls
   } from "./workbench";
   import type { VesselPresentation } from "./sample-document";
+  import { energizedDepths } from "./power";
 
   type Pan = {
     x: number;
@@ -100,6 +101,9 @@
   let nodes: RenderNode[] = $derived(getRenderNodes(document, layout, presentation, excludeVessels));
   let bounds: Bounds = $derived(getBounds(nodes, view));
   let nodeById: Map<string, RenderNode> = $derived(new Map(nodes.map((node) => [node.id, node])));
+  // live power network, derived from the document like deriveLayout — includes
+  // passive conduits, so a wire-only vessel lights up too
+  let powerDepths: Map<string, number> = $derived(energizedDepths(body));
   let selectedVesselId = $derived(selection?.kind === "vessel" ? selection.id : null);
   let edges = $derived(
     layout.connections
@@ -107,11 +111,15 @@
         const fromNode = nodeById.get(edge.from.vessel);
         const toNode = nodeById.get(edge.to.vessel);
         if (!fromNode || !toNode) return null;
+        const fromDepth = powerDepths.get(edge.from.vessel);
+        const toDepth = powerDepths.get(edge.to.vessel);
+        const flowing = fromDepth !== undefined && toDepth !== undefined && fromDepth !== toDepth;
         return {
           key: `${edge.from.vessel}:${edge.from.side}-${edge.to.vessel}:${edge.to.side}`,
           from: edge.from,
           to: edge.to,
           selected: isConnectionSelected(edge.from, edge.to),
+          flow: flowing ? (fromDepth < toDepth ? "forward" : "reverse") : undefined,
           path: getEdgePath(getPort(fromNode, edge.from.side), getPort(toNode, edge.to.side))
         };
       })
@@ -344,7 +352,7 @@
   >
     <svg class="edges" viewBox={`0 0 ${bounds.width} ${bounds.height}`}>
       {#each edges as edge (edge.key)}
-        <path class="edge" data-selected={edge.selected} d={edge.path}></path>
+        <path class="edge" data-selected={edge.selected} data-flow={edge.flow} d={edge.path}></path>
         <path
           class="edge-hit"
           d={edge.path}
@@ -373,7 +381,7 @@
         data-drop={dropTargets ? (dropTargets.has(node.id) ? "legal" : "illegal") : undefined}
         data-reject={node.id === rejectVesselId ? "true" : undefined}
         data-dead={node.dead || node.hp?.current === 0 ? "true" : undefined}
-        data-powered={node.powered ? "true" : undefined}
+        data-powered={powerDepths.has(node.id) ? "true" : undefined}
         style:left={`${point.x}px`}
         style:top={`${point.y}px`}
         role="button"

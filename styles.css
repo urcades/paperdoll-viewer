@@ -6,6 +6,7 @@
   --line: #000;
   --node-line-width: 1px;
   --add-highlight: #f00;
+  --power: #0057e7;
   --syntax-keyword: #000;
   --syntax-property: #000;
   --syntax-string: #a02b3f;
@@ -24,6 +25,7 @@
     --syntax-property: #fff;
     --syntax-string: #ff9aae;
     --syntax-atom: #9ad1ff;
+    --power: #2f7cff;
   }
 }
 
@@ -128,6 +130,31 @@ paper-doll-editor {
   stroke-width: var(--node-line-width);
   fill: none;
   shape-rendering: crispEdges;
+}
+
+.edge[data-flow] {
+  stroke: var(--power);
+  stroke-opacity: 1;
+  stroke-width: calc(var(--node-line-width) * 2);
+  stroke-dasharray: 6 5;
+  shape-rendering: auto;
+}
+
+.edge[data-flow="forward"] {
+  animation: power-flow 0.6s linear infinite;
+}
+
+.edge[data-flow="reverse"] {
+  animation: power-flow 0.6s linear infinite reverse;
+}
+
+@keyframes power-flow {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -11;
+  }
 }
 
 .edge[data-selected="true"] {
@@ -528,8 +555,9 @@ paper-doll-editor {
 }
 
 .slot[data-powered="true"] .box {
-  box-shadow: inset 0 0 0 calc(var(--node-line-width) * 2) var(--add-highlight);
-  color: var(--add-highlight);
+  box-shadow: inset 0 0 0 var(--node-line-width) var(--power);
+  background: var(--power);
+  color: #fff;
 }
 
 .damage-button,

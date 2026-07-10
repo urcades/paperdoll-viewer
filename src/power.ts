@@ -161,6 +161,48 @@ export function propagatePower(body: Body): { body: Body; changed: boolean } {
   return { body: next, changed: next !== body };
 }
 
+// Derived, never stored: BFS depth of every energized vessel from its power
+// source (electric from charged cells; hydraulic continues from the pump's
+// depth). Used by the canvas to paint the live network and animate flow
+// direction along edges — shallower node -> deeper node.
+export function energizedDepths(body: Body): Map<VesselId, number> {
+  const depths = new Map<VesselId, number>();
+
+  const flood = (sources: { vessel: VesselId; depth: number }[], medium: Medium): void => {
+    const queue = [...sources].sort((a, b) => a.depth - b.depth);
+    for (const source of queue) {
+      if (!conductsMedium(body, source.vessel, medium)) continue;
+      if (!depths.has(source.vessel) || depths.get(source.vessel)! > source.depth) {
+        depths.set(source.vessel, source.depth);
+      }
+    }
+    while (queue.length > 0) {
+      const { vessel, depth } = queue.shift()!;
+      if (depths.get(vessel) !== depth) continue;
+      for (const port of Object.values(body.vessels[vessel]?.ports ?? {})) {
+        if (!port || !conductsMedium(body, port.vessel, medium)) continue;
+        const next = depth + 1;
+        if (!depths.has(port.vessel) || depths.get(port.vessel)! > next) {
+          depths.set(port.vessel, next);
+          queue.push({ vessel: port.vessel, depth: next });
+        }
+      }
+    }
+  };
+
+  const chargedCells = locate<Cell>(body, "cell")
+    .filter((cell) => cell.data.medium === "electric" && cell.data.charge > 0)
+    .map((cell) => ({ vessel: cell.vessel, depth: 0 }));
+  flood(chargedCells, "electric");
+
+  const activePumps = locate<Converter>(body, "converter")
+    .filter((conv) => conv.data.inMedium === "electric" && depths.has(conv.vessel))
+    .map((conv) => ({ vessel: conv.vessel, depth: depths.get(conv.vessel)! }));
+  flood(activePumps, "hydraulic");
+
+  return depths;
+}
+
 // Derived, never stored: a human-readable status of the live network.
 export function derivePowerStatus(body: Body): string[] {
   const lines: string[] = [];
