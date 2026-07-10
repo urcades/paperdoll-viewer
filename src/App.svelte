@@ -10,6 +10,7 @@
     type PaperDollDocument
   } from "paperdoll";
   import PaperDollCanvas from "./PaperDollCanvas.svelte";
+  import TimelinePanel from "./TimelinePanel.svelte";
   import PoolPanel from "./PoolPanel.svelte";
   import VesselWindow from "./VesselWindow.svelte";
   import SourcePanel from "./SourcePanel.svelte";
@@ -151,11 +152,12 @@
   let running = $state(false);
   let powerTimer: ReturnType<typeof setInterval> | undefined;
 
+  let simRunId = $state(0);
+
   function pulsePower(): void {
     const result = propagatePower($state.snapshot(document.body) as Body);
     const status = derivePowerStatus(result.body).join(" · ");
-    commitBodyAt(ROOT_ADDRESS, result.body, { status: status || "no power network" });
-    return;
+    commitBodyAt(ROOT_ADDRESS, result.body, { status: status || "no power network", tag: "sim", runId: simRunId });
   }
 
   function toggleRun(): void {
@@ -164,6 +166,7 @@
       return;
     }
     running = true;
+    simRunId += 1;
     powerTimer = setInterval(pulsePower, 1000);
     pulsePower();
   }
@@ -182,6 +185,7 @@
       return;
     }
     bleeding = true;
+    simRunId += 1;
     bleedTimer = setInterval(tickBleed, 1000);
     tickBleed();
   }
@@ -200,7 +204,9 @@
     }
     const conditions = deriveCondition(result.body);
     commitBodyAt(ROOT_ADDRESS, result.body, {
-      status: `Bleeding (−${bleedRate(document.body)}/s)${conditions.length > 0 ? ` — ${conditions.join(", ")}` : ""}`
+      status: `Bleeding (−${bleedRate(document.body)}/s)${conditions.length > 0 ? ` — ${conditions.join(", ")}` : ""}`,
+      tag: "sim",
+      runId: simRunId
     });
     if (conditions.some((line) => line.startsWith("dead"))) stopBleed();
   }
@@ -322,7 +328,9 @@
       const conditions = deriveCondition(result.body);
       commitBodyAt(ROOT_ADDRESS, result.body, {
         select: { kind: "vessel", id: targetId },
-        status: conditions.length > 0 ? `${result.log} — ${conditions.join(", ")}` : result.log
+        status: conditions.length > 0 ? `${result.log} — ${conditions.join(", ")}` : result.log,
+        tag: "sim",
+        runId: simRunId
       });
     } catch (error) {
       setErrorStatus(error);
@@ -479,6 +487,26 @@
         viewControls,
         selection,
         `${verb}: ${entry.label}`,
+        true
+      );
+    } catch (error) {
+      setErrorStatus(error);
+    }
+  }
+
+  function seekTimeline(index: number): void {
+    try {
+      stopBleed();
+      stopRun();
+      const step = history.seekTo(index);
+      if (!step) return;
+      const applied = assertApplied(applyPatch(snapshotBody(document.body), step));
+      commitConstruction(
+        { ...document, body: applied },
+        presentation,
+        viewControls,
+        selection,
+        `Timeline at ${history.cursor}/${history.entries.length}`,
         true
       );
     } catch (error) {
@@ -761,6 +789,9 @@
       onElementPointerMove={updateElementDrag}
       onElementPointerUp={endElementDrag}
     />
+  {/if}
+  {#if mode === "play"}
+    <TimelinePanel entries={history.entries} cursor={history.cursor} onSeek={seekTimeline} />
   {/if}
   {#if elementDrag?.active}
     <div class="drag-ghost" style:left={`${elementDrag.x + 12}px`} style:top={`${elementDrag.y + 12}px`}>

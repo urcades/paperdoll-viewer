@@ -4,7 +4,7 @@
 // by tag. Undo/redo return the patch to apply — the App commit funnel applies
 // it and refreshes derived state without pushing a new entry.
 
-import type { PaperfoldDocument } from "paperfold";
+import { composePatches, type PaperfoldDocument } from "paperfold";
 
 export type HistoryTag = "construct" | "sim";
 
@@ -53,5 +53,36 @@ export class History {
   clear(): void {
     this.past = [];
     this.future = [];
+  }
+
+  /** All entries in chronological order; `cursor` marks how many have been applied. */
+  get entries(): HistoryEntry[] {
+    return [...this.past, ...this.future.slice().reverse()];
+  }
+
+  get cursor(): number {
+    return this.past.length;
+  }
+
+  /**
+   * Move the cursor to `index` (0 = before the first entry) and return the
+   * single composed patch that carries the body there — inverses when
+   * scrubbing back, forward patches when replaying. Null when already there.
+   */
+  seekTo(index: number): PaperfoldDocument | null {
+    const steps: PaperfoldDocument[] = [];
+    const target = Math.max(0, Math.min(index, this.past.length + this.future.length));
+    while (this.past.length > target) {
+      const entry = this.past.pop()!;
+      this.future.push(entry);
+      steps.push(($state.snapshot(entry) as HistoryEntry).inverse);
+    }
+    while (this.past.length < target && this.future.length > 0) {
+      const entry = this.future.pop()!;
+      this.past.push(entry);
+      steps.push(($state.snapshot(entry) as HistoryEntry).patch);
+    }
+    if (steps.length === 0) return null;
+    return steps.reduce((composed, step) => composePatches(composed, step));
   }
 }

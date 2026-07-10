@@ -182,6 +182,85 @@ describe("patch-based commit funnel", () => {
     expect(parseDocument({ ...preset.document, body: current }).ok).toBe(true);
   });
 
+  it("scrubs the timeline back and forward through composed patches", () => {
+    const preset = PAPER_DOLL_PRESETS.find((candidate) => candidate.id === "combatant")!;
+    const base = canonicalizeBody(clone(preset.document.body));
+    const history = new History();
+
+    let current = base;
+    const checkpoints = [base];
+    for (const target of ["head", "torso", "head"]) {
+      current = commitThrough(history, current, ROOT_ADDRESS, applyStrike(clone(current), target, WEAPONS[1], () => 0.5).body, `strike ${target}`);
+      checkpoints.push(current);
+    }
+    const end = current;
+
+    // Scrub to 0 restores the pre-strike body exactly.
+    const back = history.seekTo(0);
+    expect(back).not.toBeNull();
+    current = assertOk(applyPatch(current, back!));
+    expect(current).toEqual(base);
+    expect(history.cursor).toBe(0);
+
+    // Scrub to the middle matches the recorded checkpoint.
+    const mid = history.seekTo(2);
+    current = assertOk(applyPatch(current, mid!));
+    expect(current).toEqual(checkpoints[2]);
+
+    // Replay to the end reaches the identical final state.
+    const forward = history.seekTo(3);
+    current = assertOk(applyPatch(current, forward!));
+    expect(current).toEqual(end);
+
+    // Seeking to the current cursor is a no-op.
+    expect(history.seekTo(3)).toBeNull();
+  });
+
+  it("truncates the future when a new commit lands mid-scrub", () => {
+    const base = canonicalizeBody(clone(DEFAULT_DOCUMENT.body));
+    const history = new History();
+    let current = commitThrough(history, base, ROOT_ADDRESS, insertVessel(clone(base), {}, { id: "zone-a" }).body, "a");
+    current = commitThrough(history, current, ROOT_ADDRESS, insertVessel(clone(current), {}, { id: "zone-b" }).body, "b");
+
+    current = assertOk(applyPatch(current, history.seekTo(1)!));
+    expect(history.entries).toHaveLength(2);
+
+    commitThrough(history, current, ROOT_ADDRESS, insertVessel(clone(current), {}, { id: "zone-c" }).body, "c");
+    expect(history.entries.map((entry) => entry.label)).toEqual(["a", "c"]);
+    expect(history.canRedo).toBe(false);
+  });
+
+  it("derives identical sim patches from identical body and rng", () => {
+    const preset = PAPER_DOLL_PRESETS.find((candidate) => candidate.id === "combatant")!;
+    const base = canonicalizeBody(clone(preset.document.body));
+
+    const patches = [0, 1].map(() => {
+      const struck = applyStrike(clone(base), "head", WEAPONS[0], () => 0.5).body;
+      return assertOk(diffBodies(base, struck));
+    });
+    expect(patches[0]).toStrictEqual(patches[1]);
+  });
+
+  it("inverts a severing strike cleanly through destruction records", () => {
+    const preset = PAPER_DOLL_PRESETS.find((candidate) => candidate.id === "combatant")!;
+    const base = canonicalizeBody(clone(preset.document.body));
+
+    // High-momentum edged strikes on the neck eventually sever; drive until
+    // the topology changes so the patch contains disconnect entries.
+    let current = clone(base);
+    let severed = false;
+    for (let i = 0; i < 40 && !severed; i += 1) {
+      current = applyStrike(current, "neck", WEAPONS.find((weapon) => weapon.id === "sword") ?? WEAPONS[1], () => 0.95).body;
+      severed = Object.values(current.vessels.head?.ports ?? {}).length === 0;
+    }
+    expect(severed).toBe(true);
+
+    const patch = assertOk(diffBodies(base, current));
+    const after = assertOk(applyPatch(base, patch));
+    const restored = assertOk(applyPatch(after, invertPatch(patch)));
+    expect(restored).toEqual(base);
+  });
+
   it("produces no patch entries for a no-op commit", () => {
     const base = canonicalizeBody(clone(DEFAULT_DOCUMENT.body));
     const patch = assertOk(diffBodies(base, clone(base)));
