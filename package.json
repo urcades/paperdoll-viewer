@@ -20,7 +20,10 @@
     "@codemirror/state": "^6.7.1",
     "@codemirror/view": "^6.43.6",
     "@lezer/highlight": "^1.2.3",
-    "paperdoll": "^0.8.1",
+    "paperchain": "^0.1.0",
+    "paperdoll": "^0.8.2",
+    "paperfold": "^0.1.0",
+    "papermold": "^0.1.0",
     "svelte": "^5.56.4"
   },
   "devDependencies": {

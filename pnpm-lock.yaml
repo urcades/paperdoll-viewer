@@ -32,9 +32,18 @@ importers:
       '@lezer/highlight':
         specifier: ^1.2.3
         version: 1.2.3
+      paperchain:
+        specifier: ^0.1.0
+        version: 0.1.0
       paperdoll:
-        specifier: ^0.8.1
-        version: 0.8.1
+        specifier: ^0.8.2
+        version: 0.8.2
+      paperfold:
+        specifier: ^0.1.0
+        version: 0.1.0
+      papermold:
+        specifier: ^0.1.0
+        version: 0.1.0
       svelte:
         specifier: ^5.56.4
         version: 5.56.4
@@ -576,8 +585,20 @@ packages:
     resolution: {integrity: sha512-9miFgM2OFba7hB+pRgvtV84pYTBaoTHohvmIgiRt6dRIzbwEOIaNaP+dIlGs2fNFoB0SeISs0Jz5WFVRid6Xyg==}
     engines: {node: '>=12.20.0'}
 
-  paperdoll@0.8.1:
-    resolution: {integrity: sha512-h6I3xruhhkRyDDTKki/cKC6VSu3dWu34NVqHNWKhIX33mZ8hHae5WtHxc+bmn3pcMo2VV7mPigWRuDv1WZloTQ==}
+  paperchain@0.1.0:
+    resolution: {integrity: sha512-qpyfDsbj8tNwT8JSMN2Q80OtWCr80bn9Rfm22TwabGyIyel+/bQdQPDZxXjozxY0okk1xzniaS4S539L6j9c2A==}
+    engines: {node: '>=18'}
+
+  paperdoll@0.8.2:
+    resolution: {integrity: sha512-im3nDSU8YCv6CEJGlW70aFXYE36FdrIxiV2MUdzJ86OM2dHt31ZZqTyif/mdQo3mrreFD0OG+gReufW/7o+THw==}
+    engines: {node: '>=18'}
+
+  paperfold@0.1.0:
+    resolution: {integrity: sha512-TkcHhGSk3cBZRHRICVOA2/EA73IYPTEZz2fGMNwX1gwozT/MnP37N8ZV3BFlb2OU4ppKfmNciGhJLFwRwCHIQQ==}
+    engines: {node: '>=18'}
+
+  papermold@0.1.0:
+    resolution: {integrity: sha512-OZgtCd4HW3HWaIX66JioN19ujJMXZ78oUduRmVL4RFxIJq4XuSir0gzlrOyh9Eh6CXmNZRmibcEj+L713/aqRw==}
     engines: {node: '>=18'}
 
   parse5@8.0.1:
@@ -1286,7 +1307,19 @@ snapshots:
 
   obug@2.1.3: {}
 
-  paperdoll@0.8.1: {}
+  paperchain@0.1.0:
+    dependencies:
+      paperdoll: 0.8.2
+
+  paperdoll@0.8.2: {}
+
+  paperfold@0.1.0:
+    dependencies:
+      paperdoll: 0.8.2
+
+  papermold@0.1.0:
+    dependencies:
+      paperdoll: 0.8.2
 
   parse5@8.0.1:
     dependencies:

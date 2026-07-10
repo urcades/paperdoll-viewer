@@ -1,2 +1,5 @@
 minimumReleaseAgeExclude:
   - paperdoll
+  - paperchain
+  - paperfold
+  - papermold
