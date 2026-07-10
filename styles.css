@@ -667,7 +667,8 @@ h1 {
     height: 100dvh;
   }
 
-  .source-panel {
+  .source-panel,
+  .pool-panel {
     border-left: 0;
     border-top: 1px solid var(--line);
   }
