@@ -2,6 +2,7 @@
   import {
     deleteVessel,
     disconnect,
+    insertElement,
     insertVessel,
     moveElement,
     parseDocument,
@@ -9,6 +10,7 @@
     type ContainedElement,
     type PaperDollDocument
   } from "paperdoll";
+  import { DEAD_STATUS, judgeAll, PRESET_PROFILES, type ProfileVerdict } from "./profiles";
   import PaperDollCanvas from "./PaperDollCanvas.svelte";
   import TimelinePanel from "./TimelinePanel.svelte";
   import PoolPanel from "./PoolPanel.svelte";
@@ -145,6 +147,15 @@
   );
   let canStrike = $derived(combatVessels.length > 0);
   let condition = $derived(deriveCondition(document.body));
+  let profileVerdicts: ProfileVerdict[] = $derived.by(() => {
+    const profileIds = PRESET_PROFILES[selectedPresetId] ?? [];
+    if (profileIds.length === 0) return [];
+    try {
+      return judgeAll(snapshotBody(document.body), profileIds);
+    } catch {
+      return [];
+    }
+  });
   let bleeding = $state(false);
   let bleedTimer: ReturnType<typeof setInterval> | undefined;
   const history = new History();
@@ -196,6 +207,17 @@
     bleedTimer = undefined;
   }
 
+  // The reify relay: papermold judges structure only, so death observed by
+  // the sim must become a structural fact. Inserting the marker before the
+  // commit keeps the killing tick one atomic, undoable patch.
+  function reifyDeath(body: Body, conditions: string[]): Body {
+    if (!conditions.some((line) => line.startsWith("dead"))) return body;
+    const hasMarker = Object.values(body.vessels).some((vessel) =>
+      vessel.contains?.some((element) => element.kind === DEAD_STATUS.kind && element.type === DEAD_STATUS.type)
+    );
+    return hasMarker ? body : insertElement(body, body.root, { ...DEAD_STATUS });
+  }
+
   function tickBleed(): void {
     const result = advanceTick($state.snapshot(document.body) as Body);
     if (!result.changed) {
@@ -203,6 +225,7 @@
       return;
     }
     const conditions = deriveCondition(result.body);
+    result.body = reifyDeath(result.body, conditions);
     commitBodyAt(ROOT_ADDRESS, result.body, {
       status: `Bleeding (−${bleedRate(document.body)}/s)${conditions.length > 0 ? ` — ${conditions.join(", ")}` : ""}`,
       tag: "sim",
@@ -326,7 +349,8 @@
 
       const result = applyStrike(body, targetId, weapon);
       const conditions = deriveCondition(result.body);
-      commitBodyAt(ROOT_ADDRESS, result.body, {
+      const nextBody = reifyDeath(result.body, conditions);
+      commitBodyAt(ROOT_ADDRESS, nextBody, {
         select: { kind: "vessel", id: targetId },
         status: conditions.length > 0 ? `${result.log} — ${conditions.join(", ")}` : result.log,
         tag: "sim",
@@ -701,6 +725,11 @@
     {canDelete}
     canUndo={history.canUndo}
     canRedo={history.canRedo}
+    verdicts={profileVerdicts}
+    onVerdictClick={(verdict) =>
+      (status = verdict.conforms
+        ? `Conforms to ${verdict.profileId}`
+        : `${verdict.profileId}: ${verdict.errors.map((error) => `${error.path} — ${error.message}`).join("; ")}`)}
     {canStrike}
     {weaponId}
     {bleeding}

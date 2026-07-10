@@ -600,6 +600,26 @@ paper-doll-editor {
   pointer-events: none;
 }
 
+.profile-badges {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.profile-badge {
+  border: 1px solid var(--line);
+  background: var(--background);
+  color: inherit;
+  font: inherit;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.profile-badge[data-conforms="false"] {
+  border-color: #c0392b;
+  color: #c0392b;
+}
+
 .timeline {
   position: fixed;
   bottom: 56px;

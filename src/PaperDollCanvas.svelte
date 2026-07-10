@@ -5,6 +5,7 @@
   import BodyCanvas from "./BodyCanvas.svelte";
   import { type SelectionTarget, type ViewControls } from "./workbench";
   import type { PaperDollPreset, VesselPresentation } from "./sample-document";
+  import type { ProfileVerdict } from "./profiles";
 
   type Pan = {
     x: number;
@@ -27,6 +28,8 @@
     canDelete: boolean;
     canUndo: boolean;
     canRedo: boolean;
+    verdicts?: readonly ProfileVerdict[];
+    onVerdictClick?: (verdict: ProfileVerdict) => void;
     canStrike: boolean;
     weaponId: string;
     bleeding: boolean;
@@ -66,6 +69,8 @@
     canDelete,
     canUndo,
     canRedo,
+    verdicts = [],
+    onVerdictClick,
     canStrike,
     weaponId,
     bleeding,
@@ -124,6 +129,21 @@
         {/each}
       </select>
     </label>
+    {#if verdicts.length > 0}
+      <div class="profile-badges" aria-label="Profile conformance">
+        {#each verdicts as verdict (verdict.profileId)}
+          <button
+            type="button"
+            class="profile-badge"
+            data-conforms={verdict.conforms}
+            title={verdict.conforms ? `conforms to ${verdict.profileId}` : `fails ${verdict.profileId} — click for details`}
+            onclick={() => onVerdictClick?.(verdict)}
+          >
+            {verdict.conforms ? "✓" : "✗"} {verdict.profileId}
+          </button>
+        {/each}
+      </div>
+    {/if}
     <div class="canvas-controls" aria-label="Canvas actions">
       <!-- Sizing controls hidden for now; re-enable to adjust canvas element sizes.
       <label>

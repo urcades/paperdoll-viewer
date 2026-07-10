@@ -1,4 +1,4 @@
-import { type Body, type ContainedElement, type VesselId } from "paperdoll";
+import { removeElement, type Body, type ContainedElement, type VesselId } from "paperdoll";
 import { reachableVessels, replaceElementData, severDistalSubtree } from "./workbench";
 
 // A simplified Dwarf Fortress material/damage model over paperdoll data.
@@ -248,6 +248,14 @@ export function healAll(body: Body): Body {
         next = replaceElementData(next, vesselId, index, { ...fluid, volume: fluid.max } as never);
       }
     });
+    // healing also lifts the reified death marker (see src/profiles.ts)
+    const contains = next.vessels[vesselId].contains ?? [];
+    for (let index = contains.length - 1; index >= 0; index--) {
+      const element = contains[index];
+      if (element.kind === "status" && element.type === "dead") {
+        next = removeElement(next, vesselId, index).body;
+      }
+    }
   }
   return next;
 }
