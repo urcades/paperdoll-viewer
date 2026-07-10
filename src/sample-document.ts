@@ -805,7 +805,7 @@ const load = (id: string, medium: string, draw: number) => ({
 const converter = () => ({
   kind: "converter",
   id: "pump",
-  data: { inMedium: "electric", inDraw: 8, outMedium: "hydraulic", active: false }
+  data: { inMedium: "electric", inDraw: 0.4, outMedium: "hydraulic", active: false }
 });
 const powerAccepts = [{ kind: "cell" }, { kind: "conduit" }, { kind: "module" }, { kind: "converter" }];
 
@@ -815,7 +815,7 @@ const POWERED_MECH_DOCUMENT: PaperDollDocument = {
     root: "core",
     vessels: {
       pool: {
-        contains: [cell("spare-battery", 60), load("spotlight", "electric", 3), pipe("spare-pipe"), wire("spare-wire")]
+        contains: [cell("spare-battery", 60), load("spotlight", "electric", 0.2), pipe("spare-pipe"), wire("spare-wire")]
       },
       core: {
         accepts: powerAccepts,
@@ -829,17 +829,17 @@ const POWERED_MECH_DOCUMENT: PaperDollDocument = {
       },
       sensor: {
         accepts: powerAccepts,
-        contains: [load("sensor", "electric", 2)],
+        contains: [load("sensor", "electric", 0.1)],
         ports: { bottom: { vessel: "core", side: "top" } }
       },
       "left-gun": {
         accepts: powerAccepts,
-        contains: [load("left-gun", "electric", 5)],
+        contains: [load("left-gun", "electric", 0.25)],
         ports: { right: { vessel: "core", side: "left" } }
       },
       "right-gun": {
         accepts: powerAccepts,
-        contains: [load("right-gun", "electric", 5)],
+        contains: [load("right-gun", "electric", 0.25)],
         ports: { left: { vessel: "core", side: "right" } }
       },
       spine: {
