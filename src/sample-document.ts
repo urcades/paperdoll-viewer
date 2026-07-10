@@ -787,6 +787,112 @@ const COMBATANT_PRESENTATION: Record<string, VesselPresentation> = {
   "right-foot": { label: "Right\nFoot", icon: "J" }
 };
 
+// The powered mech: a two-medium power network layered over topology. Power
+// floods from the battery (electric) through wire-conducting vessels to loads
+// and the pump; the pump converts electric -> hydraulic and drives the legs.
+// A vessel conducts a medium if it contains an element referencing it, so the
+// live network is derived from containment + ports together (see power.ts).
+// Ids are unique per element (law 8) and, since conduits are fungible and get
+// dragged between vessels in play mode, unique across the whole mech too.
+const cell = (id: string, charge: number) => ({ kind: "cell", id, data: { charge, max: charge, medium: "electric" } });
+const wire = (id: string) => ({ kind: "conduit", id, data: { medium: "electric" } });
+const pipe = (id: string) => ({ kind: "conduit", id, data: { medium: "hydraulic" } });
+const load = (id: string, medium: string, draw: number) => ({
+  kind: "module",
+  id,
+  data: { draw, medium, powered: false }
+});
+const converter = () => ({
+  kind: "converter",
+  id: "pump",
+  data: { inMedium: "electric", inDraw: 8, outMedium: "hydraulic", active: false }
+});
+const powerAccepts = [{ kind: "cell" }, { kind: "conduit" }, { kind: "module" }, { kind: "converter" }];
+
+const POWERED_MECH_DOCUMENT: PaperDollDocument = {
+  protocol: PAPER_DOLL_PROTOCOL,
+  body: {
+    root: "core",
+    vessels: {
+      pool: {
+        contains: [cell("spare-battery", 60), load("spotlight", "electric", 3), pipe("spare-pipe"), wire("spare-wire")]
+      },
+      core: {
+        accepts: powerAccepts,
+        contains: [cell("battery", 100), wire("core-wire")],
+        ports: {
+          top: { vessel: "sensor", side: "bottom" },
+          left: { vessel: "left-gun", side: "right" },
+          right: { vessel: "right-gun", side: "left" },
+          bottom: { vessel: "spine", side: "top" }
+        }
+      },
+      sensor: {
+        accepts: powerAccepts,
+        contains: [load("sensor", "electric", 2)],
+        ports: { bottom: { vessel: "core", side: "top" } }
+      },
+      "left-gun": {
+        accepts: powerAccepts,
+        contains: [load("left-gun", "electric", 5)],
+        ports: { right: { vessel: "core", side: "left" } }
+      },
+      "right-gun": {
+        accepts: powerAccepts,
+        contains: [load("right-gun", "electric", 5)],
+        ports: { left: { vessel: "core", side: "right" } }
+      },
+      spine: {
+        accepts: powerAccepts,
+        contains: [wire("spine-wire")],
+        ports: {
+          top: { vessel: "core", side: "bottom" },
+          bottom: { vessel: "pump", side: "top" }
+        }
+      },
+      pump: {
+        accepts: powerAccepts,
+        contains: [converter(), wire("pump-wire"), pipe("pump-pipe")],
+        ports: {
+          top: { vessel: "spine", side: "bottom" },
+          bottom: { vessel: "hips", side: "top" }
+        }
+      },
+      hips: {
+        accepts: powerAccepts,
+        contains: [pipe("hips-pipe")],
+        ports: {
+          top: { vessel: "pump", side: "bottom" },
+          left: { vessel: "left-leg", side: "right" },
+          right: { vessel: "right-leg", side: "left" }
+        }
+      },
+      "left-leg": {
+        accepts: powerAccepts,
+        contains: [load("left-leg", "hydraulic", 4)],
+        ports: { right: { vessel: "hips", side: "left" } }
+      },
+      "right-leg": {
+        accepts: powerAccepts,
+        contains: [load("right-leg", "hydraulic", 4)],
+        ports: { left: { vessel: "hips", side: "right" } }
+      }
+    }
+  }
+};
+
+const POWERED_MECH_PRESENTATION: Record<string, VesselPresentation> = {
+  sensor: { label: "Sensor", icon: "S" },
+  "left-gun": { label: "Left\nGun", icon: "L" },
+  core: { label: "Core", icon: "@" },
+  "right-gun": { label: "Right\nGun", icon: "R" },
+  spine: { label: "Spine", icon: "|" },
+  pump: { label: "Pump", icon: "P" },
+  hips: { label: "Hips", icon: "H" },
+  "left-leg": { label: "Left\nLeg", icon: "G" },
+  "right-leg": { label: "Right\nLeg", icon: "K" }
+};
+
 export const PAPER_DOLL_PRESETS: readonly PaperDollPreset[] = [
   {
     id: "humanoid",
@@ -823,6 +929,12 @@ export const PAPER_DOLL_PRESETS: readonly PaperDollPreset[] = [
     name: "Combatant",
     document: COMBATANT_DOCUMENT,
     presentation: COMBATANT_PRESENTATION
+  },
+  {
+    id: "powered-mech",
+    name: "Powered Mech",
+    document: POWERED_MECH_DOCUMENT,
+    presentation: POWERED_MECH_PRESENTATION
   }
 ];
 

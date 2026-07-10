@@ -73,6 +73,8 @@ export type RenderNode = {
   item?: string;
   hp?: { current: number; max: number };
   dead?: boolean;
+  power?: string;
+  powered?: boolean;
 };
 
 export function getView(controls: ViewControls): RenderView {
@@ -139,8 +141,32 @@ function toRenderNode(
     icon: vesselPresentation?.icon,
     accepts: vessel?.accepts?.map((token) => (token.type ? `${token.kind}/${token.type}` : token.kind)),
     item: vessel?.contains?.map(formatElement).join(", "),
-    ...summarizeIntegrity(vessel?.contains)
+    ...summarizeIntegrity(vessel?.contains),
+    ...summarizePower(vessel?.contains)
   };
+}
+
+// Reads raw power-element shapes (cell/module/converter) for display without
+// importing power.ts — keeps the render pipeline free of a module cycle.
+function summarizePower(contains: Vessel["contains"]): Pick<RenderNode, "power" | "powered"> {
+  const parts: string[] = [];
+  let powered = false;
+  for (const element of contains ?? []) {
+    const data = element.data;
+    if (!data || typeof data !== "object" || Array.isArray(data)) continue;
+    const record = data as { charge?: unknown; max?: unknown; powered?: unknown; active?: unknown };
+    if (element.kind === "cell" && typeof record.charge === "number" && typeof record.max === "number") {
+      parts.push(`${Math.round((record.charge / record.max) * 100)}%`);
+      if (record.charge > 0) powered = true;
+    } else if (element.kind === "module" && typeof record.powered === "boolean") {
+      parts.push(record.powered ? "on" : "off");
+      if (record.powered) powered = true;
+    } else if (element.kind === "converter" && typeof record.active === "boolean") {
+      parts.push(record.active ? "on" : "off");
+      if (record.active) powered = true;
+    }
+  }
+  return parts.length > 0 ? { power: parts.join(" "), powered } : {};
 }
 
 function summarizeIntegrity(contains: Vessel["contains"]): Pick<RenderNode, "hp" | "dead"> {

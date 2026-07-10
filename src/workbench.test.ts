@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { connect, deleteVessel, deriveLayout, insertElement, insertVessel, parseDocument, type Body } from "paperdoll";
+import { connect, deleteVessel, deriveLayout, disconnect, insertElement, insertVessel, parseDocument, type Body } from "paperdoll";
 import { advanceTick, applyStrike, bleedRate, deriveCondition, getCombatData, healAll, WEAPONS } from "./combat";
+import { derivePowerStatus, hasPower, propagatePower } from "./power";
 import { reachableVessels, severDistalSubtree } from "./workbench";
 import {
   DEFAULT_CANVAS_PADDING,
@@ -38,7 +39,7 @@ describe("paperdoll viewer construction flow", () => {
   });
 
   it("ships valid selectable body presets", () => {
-    expect(PAPER_DOLL_PRESETS.map((preset) => preset.id)).toEqual(["humanoid", "mech", "vehicle", "satellite", "hand", "combatant"]);
+    expect(PAPER_DOLL_PRESETS.map((preset) => preset.id)).toEqual(["humanoid", "mech", "vehicle", "satellite", "hand", "combatant", "powered-mech"]);
 
     for (const preset of PAPER_DOLL_PRESETS) {
       const parsed = parseDocument(preset.document);
@@ -523,5 +524,73 @@ describe("pulping and bleeding", () => {
     body = healAll(body);
     expect(bloodVolume(body)).toBe(100);
     expect(advanceTick(body).changed).toBe(false);
+  });
+});
+
+
+describe("power propagation", () => {
+  const mech = () => structuredClone(PAPER_DOLL_PRESETS.find((preset) => preset.id === "powered-mech")!.document.body);
+  const flag = (body: Body, vessel: string, kind: string, key: string) => {
+    const el = body.vessels[vessel].contains!.find((element) => element.kind === kind)!;
+    return (el.data as Record<string, unknown>)[key];
+  };
+
+  it("floods electric from the battery to loads and the pump", () => {
+    const { body } = propagatePower(mech());
+    expect(flag(body, "sensor", "module", "powered")).toBe(true);
+    expect(flag(body, "left-gun", "module", "powered")).toBe(true);
+    expect(flag(body, "pump", "converter", "active")).toBe(true);
+  });
+
+  it("cascades hydraulic: the pump drives both legs", () => {
+    const { body } = propagatePower(mech());
+    expect(flag(body, "left-leg", "module", "powered")).toBe(true);
+    expect(flag(body, "right-leg", "module", "powered")).toBe(true);
+  });
+
+  it("cutting the pump feed kills the hydraulic legs but not the arms", () => {
+    const cut = disconnect(mech(), { vessel: "spine", side: "bottom" }).body;
+    const { body } = propagatePower(cut);
+    // pump is now isolated from the battery
+    expect(flag(body, "pump", "converter", "active")).toBe(false);
+    expect(flag(body, "left-leg", "module", "powered")).toBe(false);
+    expect(flag(body, "right-leg", "module", "powered")).toBe(false);
+    // arms/sensor still fed directly from the core
+    expect(flag(body, "left-gun", "module", "powered")).toBe(true);
+    expect(flag(body, "sensor", "module", "powered")).toBe(true);
+  });
+
+  it("cutting one leg's pipe leaves the other running", () => {
+    const cut = disconnect(mech(), { vessel: "hips", side: "left" }).body;
+    const { body } = propagatePower(cut);
+    expect(flag(body, "left-leg", "module", "powered")).toBe(false);
+    expect(flag(body, "right-leg", "module", "powered")).toBe(true);
+  });
+
+  it("drains the battery each pulse and eventually browns out", () => {
+    let body = mech();
+    const start = flag(body, "core", "cell", "charge") as number;
+    body = propagatePower(body).body;
+    expect(flag(body, "core", "cell", "charge") as number).toBeLessThan(start);
+
+    for (let i = 0; i < 200 && (flag(body, "core", "cell", "charge") as number) > 0; i += 1) {
+      body = propagatePower(body).body;
+    }
+    expect(flag(body, "core", "cell", "charge")).toBe(0);
+    const dead = propagatePower(body).body;
+    expect(flag(dead, "left-gun", "module", "powered")).toBe(false);
+    expect(flag(dead, "left-leg", "module", "powered")).toBe(false);
+  });
+
+  it("stays protocol-valid through propagation", () => {
+    const { body } = propagatePower(mech());
+    expect(parseDocument({ protocol: "paper-doll/v3", body }).ok).toBe(true);
+  });
+
+  it("derives a readable status line", () => {
+    const { body } = propagatePower(mech());
+    const status = derivePowerStatus(body);
+    expect(status[0]).toMatch(/battery \d+%/);
+    expect(status).toContainEqual(expect.stringContaining("pump online"));
   });
 });

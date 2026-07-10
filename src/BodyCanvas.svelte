@@ -373,6 +373,7 @@
         data-drop={dropTargets ? (dropTargets.has(node.id) ? "legal" : "illegal") : undefined}
         data-reject={node.id === rejectVesselId ? "true" : undefined}
         data-dead={node.dead || node.hp?.current === 0 ? "true" : undefined}
+        data-powered={node.powered ? "true" : undefined}
         style:left={`${point.x}px`}
         style:top={`${point.y}px`}
         role="button"
@@ -424,7 +425,11 @@
         style:left={`${point.x}px`}
         style:top={`${point.y + view.node / 2 + 7}px`}
       >
-        {node.hp ? `${node.label}\n${Math.round((node.hp.current / node.hp.max) * 100)}%` : node.label}
+        {node.hp
+          ? `${node.label}\n${Math.round((node.hp.current / node.hp.max) * 100)}%`
+          : node.power
+            ? `${node.label}\n${node.power}`
+            : node.label}
       </span>
     {/each}
   </div>

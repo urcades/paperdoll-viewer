@@ -30,6 +30,7 @@
     parseConstructionSource
   } from "./construction-source";
   import { advanceTick, applyStrike, bleedRate, deriveCondition, hasCombatLayers, healAll, WEAPONS } from "./combat";
+  import { derivePowerStatus, hasPower, propagatePower } from "./power";
   import {
     canDisconnect,
     describeElement,
@@ -140,6 +141,34 @@
   let condition = $derived(deriveCondition(document.body));
   let bleeding = $state(false);
   let bleedTimer: ReturnType<typeof setInterval> | undefined;
+  let canRun = $derived(hasPower(document.body));
+  let running = $state(false);
+  let powerTimer: ReturnType<typeof setInterval> | undefined;
+
+  function pulsePower(): void {
+    const result = propagatePower($state.snapshot(document.body) as Body);
+    const status = derivePowerStatus(result.body).join(" · ");
+    commitBodyAt(ROOT_ADDRESS, result.body, { status: status || "no power network" });
+    return;
+  }
+
+  function toggleRun(): void {
+    if (running) {
+      stopRun();
+      return;
+    }
+    running = true;
+    powerTimer = setInterval(pulsePower, 1000);
+    pulsePower();
+  }
+
+  function stopRun(): void {
+    running = false;
+    clearInterval(powerTimer);
+    powerTimer = undefined;
+  }
+
+  $effect(() => () => clearInterval(powerTimer));
 
   function toggleBleed(): void {
     if (bleeding) {
@@ -442,6 +471,8 @@
     selectedPresetId = preset.id;
     pan = { x: 0, y: 0 };
     vesselWindow = null;
+    stopBleed();
+    stopRun();
     commitConstruction(
       structuredClone(preset.document),
       structuredClone(preset.presentation),
@@ -570,6 +601,8 @@
     {canStrike}
     {weaponId}
     {bleeding}
+    {canRun}
+    {running}
     presets={PAPER_DOLL_PRESETS}
     {selectedPresetId}
     {pan}
@@ -585,6 +618,8 @@
     onDeleteSelected={deleteSelected}
     onWeaponChange={(id) => (weaponId = id)}
     onToggleBleed={toggleBleed}
+    onPulse={pulsePower}
+    onToggleRun={toggleRun}
     onStrike={strike}
     onHeal={healCombatant}
   >

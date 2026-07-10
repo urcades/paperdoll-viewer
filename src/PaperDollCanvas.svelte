@@ -31,6 +31,8 @@
     canStrike: boolean;
     weaponId: string;
     bleeding: boolean;
+    canRun: boolean;
+    running: boolean;
     presets: readonly PaperDollPreset[];
     selectedPresetId: string;
     pan: Pan;
@@ -49,6 +51,8 @@
     onStrike: () => void;
     onToggleBleed: () => void;
     onHeal: () => void;
+    onPulse: () => void;
+    onToggleRun: () => void;
   };
 
   let {
@@ -64,6 +68,8 @@
     canStrike,
     weaponId,
     bleeding,
+    canRun,
+    running,
     presets,
     selectedPresetId,
     pan,
@@ -81,7 +87,9 @@
     onWeaponChange,
     onStrike,
     onToggleBleed,
-    onHeal
+    onHeal,
+    onPulse,
+    onToggleRun
   }: Props = $props();
 
   function updateViewControl(key: keyof ViewControls, event: Event): void {
@@ -170,6 +178,12 @@
           {bleeding ? "stop bleed" : "bleed"}
         </button>
         <button class="heal-button" type="button" onclick={onHeal}>heal</button>
+      {/if}
+      {#if canRun}
+        <button class="damage-button" type="button" onclick={onPulse}>pulse</button>
+        <button class="heal-button" type="button" data-active={running} onclick={onToggleRun}>
+          {running ? "stop" : "run"}
+        </button>
       {/if}
       <button class="delete-node" type="button" disabled={!canDelete} onclick={onDeleteSelected}>delete</button>
     </div>
