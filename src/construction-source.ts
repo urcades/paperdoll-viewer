@@ -9,6 +9,11 @@ export type SceneConstruction = {
   view: ViewControls;
 };
 
+// NOTE: the PaperDollConstruction round-trip below (parseConstructionSource /
+// formatConstructionSource / getConstructionNodeRanges) is the pre-scene,
+// single-body editor format. The app now uses the paperScene functions
+// further down; these are kept solely because src/characterization.test.ts —
+// the frozen pre-migration oracle — pins their behavior.
 export type PaperDollConstruction = {
   document: PaperDollDocument;
   presentation: Record<string, VesselPresentation>;
