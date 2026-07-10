@@ -29,6 +29,9 @@
     getConstructionNodeRanges,
     parseConstructionSource
   } from "./construction-source";
+  import { applyPatch, canonicalizeBody, diffBodies, invertPatch, type PaperfoldDocument } from "paperfold";
+  import { History, type HistoryTag } from "./history.svelte";
+  import { assertApplied, snapshotBody } from "./protocol.svelte";
   import { advanceTick, applyStrike, bleedRate, deriveCondition, hasCombatLayers, healAll, WEAPONS } from "./combat";
   import { derivePowerStatus, hasPower, propagatePower } from "./power";
   import {
@@ -63,6 +66,8 @@
   type MutationMeta = {
     select?: SelectionTarget;
     status: string;
+    tag?: HistoryTag;
+    runId?: number | null;
   };
 
   type ElementDrag = {
@@ -141,6 +146,7 @@
   let condition = $derived(deriveCondition(document.body));
   let bleeding = $state(false);
   let bleedTimer: ReturnType<typeof setInterval> | undefined;
+  const history = new History();
   let canRun = $derived(hasPower(document.body));
   let running = $state(false);
   let powerTimer: ReturnType<typeof setInterval> | undefined;
@@ -411,15 +417,31 @@
     return state.bodyElementId === null ? label : `${label}: ${state.bodyElementId}`;
   }
 
+  // The commit funnel. Callers hand over a candidate next body (possibly for
+  // a nested drawer address); the funnel lifts it to the root, diffs against
+  // the current root, and commits paperfold's canonical applied body. Every
+  // mutation therefore lands as a recorded, invertible patch.
   function commitBodyAt(address: string, nextBody: Body, meta: MutationMeta): void {
     try {
-      const rootBody = replaceBodyAtAddress(
-        $state.snapshot(document.body) as Body,
-        address,
-        $state.snapshot(nextBody) as Body
-      );
+      const prevRoot = snapshotBody(document.body);
+      const nextRoot = replaceBodyAtAddress(prevRoot, address, snapshotBody(nextBody));
+      const patch = assertApplied(diffBodies(prevRoot, nextRoot));
+      if (patch.patch.length === 0) {
+        // No-op commit (e.g. a power pulse with nothing left to drain): update
+        // the status line without polluting history.
+        status = meta.status;
+        return;
+      }
+      const applied = assertApplied(applyPatch(prevRoot, patch));
+      history.push({
+        patch,
+        inverse: invertPatch(patch),
+        label: meta.status,
+        tag: meta.tag ?? "construct",
+        runId: meta.runId ?? null
+      });
       commitConstruction(
-        { ...document, body: rootBody },
+        { ...document, body: applied },
         presentation,
         viewControls,
         meta.select ? { address, target: meta.select } : selection,
@@ -429,6 +451,49 @@
     } catch (error) {
       setErrorStatus(error);
     }
+  }
+
+  // Undo/redo re-apply recorded patches without pushing new entries. Timers
+  // stop first so a sim run can't race a rewind.
+  function undo(): void {
+    applyHistoryStep(history.undo(), "inverse", "Undid");
+  }
+
+  function redo(): void {
+    applyHistoryStep(history.redo(), "patch", "Redid");
+  }
+
+  function applyHistoryStep(
+    entry: { patch: PaperfoldDocument; inverse: PaperfoldDocument; label: string } | null,
+    direction: "patch" | "inverse",
+    verb: string
+  ): void {
+    if (!entry) return;
+    try {
+      stopBleed();
+      stopRun();
+      const applied = assertApplied(applyPatch(snapshotBody(document.body), entry[direction]));
+      commitConstruction(
+        { ...document, body: applied },
+        presentation,
+        viewControls,
+        selection,
+        `${verb}: ${entry.label}`,
+        true
+      );
+    } catch (error) {
+      setErrorStatus(error);
+    }
+  }
+
+  function handleUndoKey(event: KeyboardEvent): void {
+    if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "z") return;
+    const target = event.target as HTMLElement | null;
+    // Leave the source panel's own editor history alone.
+    if (target?.closest(".cm-editor, input, textarea, select")) return;
+    event.preventDefault();
+    if (event.shiftKey) redo();
+    else undo();
   }
 
   function deleteSelected(): void {
@@ -473,6 +538,7 @@
     vesselWindow = null;
     stopBleed();
     stopRun();
+    history.clear();
     commitConstruction(
       structuredClone(preset.document),
       structuredClone(preset.presentation),
@@ -501,6 +567,7 @@
       );
       selectedPresetId = getMatchingPresetId(construction.document, construction.presentation) ?? "custom";
       sourceStatus = null;
+      history.clear();
     } catch (error) {
       sourceStatus = formatSourceError(error);
     }
@@ -577,15 +644,22 @@
     nextDocument: PaperDollDocument,
     nextPresentation: Record<string, VesselPresentation>
   ): string | null {
-    const documentText = JSON.stringify(nextDocument);
+    // Compare canonical bodies — patch commits canonicalize (dropping empty
+    // ports/contains), so naive whole-document equality would never match a
+    // preset again after the first edit+undo.
+    const documentText = JSON.stringify({ ...nextDocument, body: canonicalizeBody(nextDocument.body) });
     const presentationText = JSON.stringify(nextPresentation);
     const matchingPreset: PaperDollPreset | undefined = PAPER_DOLL_PRESETS.find(
-      (preset) => JSON.stringify(preset.document) === documentText && JSON.stringify(preset.presentation) === presentationText
+      (preset) =>
+        JSON.stringify({ ...preset.document, body: canonicalizeBody(preset.document.body) }) === documentText &&
+        JSON.stringify(preset.presentation) === presentationText
     );
 
     return matchingPreset?.id ?? null;
   }
 </script>
+
+<svelte:window onkeydown={handleUndoKey} />
 
 <div class="paper-doll-editor">
   <PaperDollCanvas
@@ -597,6 +671,8 @@
     rejectVesselId={rootRejectVesselId}
     {status}
     {canDelete}
+    canUndo={history.canUndo}
+    canRedo={history.canRedo}
     {canStrike}
     {weaponId}
     {bleeding}
@@ -614,6 +690,8 @@
     onMutate={(nextBody, meta) => commitBodyAt(ROOT_ADDRESS, nextBody, meta)}
     onMutationError={setErrorStatus}
     onDeleteSelected={deleteSelected}
+    onUndo={undo}
+    onRedo={redo}
     onWeaponChange={(id) => (weaponId = id)}
     onToggleBleed={toggleBleed}
     onPulse={pulsePower}

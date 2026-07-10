@@ -25,6 +25,8 @@
     rejectVesselId?: string | null;
     status: string;
     canDelete: boolean;
+    canUndo: boolean;
+    canRedo: boolean;
     canStrike: boolean;
     weaponId: string;
     bleeding: boolean;
@@ -43,6 +45,8 @@
     onMutate: (nextBody: Body, meta: MutationMeta) => void;
     onMutationError: (error: unknown) => void;
     onDeleteSelected: () => void;
+    onUndo: () => void;
+    onRedo: () => void;
     onWeaponChange: (weaponId: string) => void;
     onStrike: () => void;
     onToggleBleed: () => void;
@@ -60,6 +64,8 @@
     rejectVesselId = null,
     status,
     canDelete,
+    canUndo,
+    canRedo,
     canStrike,
     weaponId,
     bleeding,
@@ -78,6 +84,8 @@
     onMutate,
     onMutationError,
     onDeleteSelected,
+    onUndo,
+    onRedo,
     onWeaponChange,
     onStrike,
     onToggleBleed,
@@ -174,6 +182,8 @@
           {running ? "stop" : "run"}
         </button>
       {/if}
+      <button class="heal-button" type="button" disabled={!canUndo} onclick={onUndo}>undo</button>
+      <button class="heal-button" type="button" disabled={!canRedo} onclick={onRedo}>redo</button>
       <button class="delete-node" type="button" disabled={!canDelete} onclick={onDeleteSelected}>delete</button>
     </div>
   </header>
