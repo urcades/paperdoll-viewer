@@ -32,11 +32,11 @@
   import {
     canDisconnect,
     describeElement,
-    getBodyAtPath,
+    getBodyAtAddress,
+    joinAddress,
     legalDropVessels,
-    pathsEqual,
-    replaceBodyAtPath,
-    type BodyPath,
+    replaceBodyAtAddress,
+    ROOT_ADDRESS,
     type SelectionTarget,
     type ViewControls
   } from "./workbench";
@@ -47,14 +47,14 @@
   };
 
   type Selection = {
-    path: BodyPath;
+    address: string;
     target: SelectionTarget;
   };
 
   type VesselWindowState = {
-    vesselPath: BodyPath;
+    surface: string;
     vessel: string;
-    bodyElementIndex: number | null;
+    bodyElementId: string | null;
     drawerVessel: string | null;
   };
 
@@ -65,7 +65,7 @@
 
   type ElementDrag = {
     pointerId: number;
-    path: BodyPath;
+    address: string;
     vessel: string;
     index: number;
     element: ContainedElement;
@@ -85,7 +85,10 @@
 
   let document: PaperDollDocument = $state(structuredClone(DEFAULT_DOCUMENT));
   let presentation: Record<string, VesselPresentation> = $state(structuredClone(VESSEL_PRESENTATION));
-  let selection = $state<Selection | null>({ path: [], target: { kind: "vessel", id: DEFAULT_DOCUMENT.body.root } });
+  let selection = $state<Selection | null>({
+    address: ROOT_ADDRESS,
+    target: { kind: "vessel", id: DEFAULT_DOCUMENT.body.root }
+  });
   let selectedPresetId = $state(DEFAULT_PRESET.id);
   let status = $state(`Selected ${DEFAULT_DOCUMENT.body.root}`);
   let sourceStatus: string | null = $state(null);
@@ -94,30 +97,32 @@
   let vesselWindow = $state<VesselWindowState | null>(null);
   let mode = $state<"construct" | "play">("construct");
   let elementDrag = $state<ElementDrag | null>(null);
-  let rejectFlash = $state<{ path: BodyPath; vessel: string } | null>(null);
+  let rejectFlash = $state<{ address: string; vessel: string } | null>(null);
   let rejectTimer: ReturnType<typeof setTimeout> | undefined;
 
   let windowSurfaceBody: Body | null = $derived(
-    vesselWindow ? getBodyAtPath(document.body, vesselWindow.vesselPath) : null
+    vesselWindow ? getBodyAtAddress(document.body, vesselWindow.surface) : null
   );
   let windowVessel = $derived(
     vesselWindow && windowSurfaceBody ? (windowSurfaceBody.vessels[vesselWindow.vessel] ?? null) : null
   );
-  let windowCanvasPath: BodyPath | null = $derived(
-    vesselWindow && vesselWindow.bodyElementIndex !== null
-      ? [...vesselWindow.vesselPath, { vessel: vesselWindow.vessel, elementIndex: vesselWindow.bodyElementIndex }]
+  let windowCanvasAddress: string | null = $derived(
+    vesselWindow && vesselWindow.bodyElementId !== null
+      ? joinAddress(vesselWindow.surface, vesselWindow.vessel, vesselWindow.bodyElementId)
       : null
   );
-  let windowBody: Body | null = $derived(windowCanvasPath ? getBodyAtPath(document.body, windowCanvasPath) : null);
+  let windowBody: Body | null = $derived(
+    windowCanvasAddress !== null ? getBodyAtAddress(document.body, windowCanvasAddress) : null
+  );
   let windowDrawerVessel = $derived(
     vesselWindow?.drawerVessel && windowBody ? (windowBody.vessels[vesselWindow.drawerVessel] ?? null) : null
   );
   let windowTitle = $derived(getWindowTitle(vesselWindow));
   let rootSelection: SelectionTarget | null = $derived(
-    selection && pathsEqual(selection.path, []) ? selection.target : null
+    selection && selection.address === ROOT_ADDRESS ? selection.target : null
   );
   let windowSelection: SelectionTarget | null = $derived(
-    selection && windowCanvasPath && pathsEqual(selection.path, windowCanvasPath) ? selection.target : null
+    selection && selection.address === windowCanvasAddress ? selection.target : null
   );
   let selectedRootVesselId = $derived(rootSelection?.kind === "vessel" ? rootSelection.id : document.body.root);
   let canDelete = $derived(computeCanDelete(selection));
@@ -127,30 +132,30 @@
   let nodeRanges = $derived(getConstructionNodeRanges(constructionSource));
   let poolElements = $derived(document.body.vessels.pool?.contains ?? []);
   let rootDropTargets = $derived(
-    elementDrag?.active && pathsEqual(elementDrag.path, []) ? elementDrag.targets : null
+    elementDrag?.active && elementDrag.address === ROOT_ADDRESS ? elementDrag.targets : null
   );
-  let rootRejectVesselId = $derived(
-    rejectFlash && pathsEqual(rejectFlash.path, []) ? rejectFlash.vessel : null
-  );
+  let rootRejectVesselId = $derived(rejectFlash?.address === ROOT_ADDRESS ? rejectFlash.vessel : null);
   let windowDropTargets = $derived(
-    elementDrag?.active && windowCanvasPath && pathsEqual(elementDrag.path, windowCanvasPath)
+    elementDrag?.active && windowCanvasAddress !== null && elementDrag.address === windowCanvasAddress
       ? elementDrag.targets
       : null
   );
   let windowRejectVesselId = $derived(
-    rejectFlash && windowCanvasPath && pathsEqual(rejectFlash.path, windowCanvasPath) ? rejectFlash.vessel : null
+    rejectFlash && windowCanvasAddress !== null && rejectFlash.address === windowCanvasAddress
+      ? rejectFlash.vessel
+      : null
   );
 
-  function beginElementDrag(event: PointerEvent, path: BodyPath, vesselId: string, index: number): void {
+  function beginElementDrag(event: PointerEvent, address: string, vesselId: string, index: number): void {
     if (event.button !== 0) return;
-    const body = getBodyAtPath(document.body, path);
+    const body = getBodyAtAddress(document.body, address);
     const element = body?.vessels[vesselId]?.contains?.[index];
     if (!body || !element) return;
 
     event.preventDefault();
     elementDrag = {
       pointerId: event.pointerId,
-      path,
+      address,
       vessel: vesselId,
       index,
       element,
@@ -182,7 +187,7 @@
     const targetVessel = resolveDropVessel(drag, dropped);
     if (!targetVessel || targetVessel === drag.vessel) return;
 
-    const body = getBodyAtPath(document.body, drag.path);
+    const body = getBodyAtAddress(document.body, drag.address);
     if (!body) return;
 
     if (!drag.targets.has(targetVessel)) {
@@ -193,7 +198,7 @@
           ? "nothing (sealed)"
           : accepts.map((token) => (token.type ? `${token.kind}/${token.type}` : token.kind)).join(", ");
       status = `${targetVessel} does not accept ${drag.element.type ? `${drag.element.kind}/${drag.element.type}` : drag.element.kind} — accepts ${acceptsLabel}`;
-      rejectFlash = { path: drag.path, vessel: targetVessel };
+      rejectFlash = { address: drag.address, vessel: targetVessel };
       clearTimeout(rejectTimer);
       rejectTimer = setTimeout(() => (rejectFlash = null), 450);
       return;
@@ -201,7 +206,7 @@
 
     try {
       const nextBody = moveElement(body, drag.vessel, drag.index, targetVessel);
-      commitBodyAt(drag.path, nextBody, {
+      commitBodyAt(drag.address, nextBody, {
         select: { kind: "vessel", id: targetVessel },
         status: `Moved ${describeElement(drag.element)} to ${targetVessel}`
       });
@@ -215,15 +220,15 @@
   function resolveDropVessel(drag: ElementDrag, dropped: Element | null): string | null {
     if (!dropped) return null;
     if (dropped.closest(".pool-panel")) {
-      return pathsEqual(drag.path, []) ? "pool" : null;
+      return drag.address === ROOT_ADDRESS ? "pool" : null;
     }
 
     const slot = dropped.closest(".slot");
     if (!slot) return null;
     const inWindow = Boolean(dropped.closest(".embedded-body-window"));
     const sameSurface = inWindow
-      ? Boolean(windowCanvasPath && pathsEqual(drag.path, windowCanvasPath))
-      : pathsEqual(drag.path, []);
+      ? windowCanvasAddress !== null && drag.address === windowCanvasAddress
+      : drag.address === ROOT_ADDRESS;
     return sameSurface ? ((slot as HTMLElement).dataset.nodeId ?? null) : null;
   }
 
@@ -231,7 +236,7 @@
     mode = nextMode;
     if (nextMode === "play" && !document.body.vessels.pool) {
       const result = insertVessel($state.snapshot(document.body) as Body, {}, { id: "pool" });
-      commitBodyAt([], result.body, { status: "Entered play mode with an empty pool" });
+      commitBodyAt(ROOT_ADDRESS, result.body, { status: "Entered play mode with an empty pool" });
       return;
     }
     status = nextMode === "play" ? "Play mode: drag items between pool and vessels" : "Construct mode";
@@ -239,7 +244,7 @@
 
   function computeCanDelete(current: Selection | null): boolean {
     if (!current) return false;
-    const body = getBodyAtPath(document.body, current.path);
+    const body = getBodyAtAddress(document.body, current.address);
     if (!body) return false;
     if (current.target.kind === "vessel") {
       return current.target.id !== body.root && Boolean(body.vessels[current.target.id]);
@@ -247,15 +252,15 @@
     return canDisconnect(body, current.target.from);
   }
 
-  function selectAt(path: BodyPath, target: SelectionTarget): void {
-    selection = { path, target };
+  function selectAt(address: string, target: SelectionTarget): void {
+    selection = { address, target };
     if (target.kind === "vessel") {
       status = `Selected ${target.id}`;
       return;
     }
 
     const label = `${target.from.vessel} ↔ ${target.to.vessel}`;
-    const body = getBodyAtPath(document.body, path);
+    const body = getBodyAtAddress(document.body, address);
     status =
       body && canDisconnect(body, target.from)
         ? `Selected connection ${label}`
@@ -263,28 +268,59 @@
   }
 
   function openVessel(vesselId: string): void {
-    vesselWindow = { vesselPath: [], vessel: vesselId, bodyElementIndex: null, drawerVessel: null };
+    vesselWindow = { surface: ROOT_ADDRESS, vessel: vesselId, bodyElementId: null, drawerVessel: null };
+  }
+
+  // Addresses are element-id based (law 8), so opening a body requires the
+  // element to carry an id.
+  function openBodyElement(index: number): void {
+    if (!vesselWindow) return;
+    const element = windowVessel?.contains?.[index];
+    if (!element?.body) return;
+    if (!element.id) {
+      status = "Element needs an id to be addressed — give it one in the source panel";
+      return;
+    }
+    vesselWindow = { ...vesselWindow, bodyElementId: element.id, drawerVessel: null };
+  }
+
+  function openDrawerBodyElement(index: number): void {
+    if (!vesselWindow?.drawerVessel || windowCanvasAddress === null) return;
+    const element = windowDrawerVessel?.contains?.[index];
+    if (!element?.body) return;
+    if (!element.id) {
+      status = "Element needs an id to be addressed — give it one in the source panel";
+      return;
+    }
+    vesselWindow = {
+      surface: windowCanvasAddress,
+      vessel: vesselWindow.drawerVessel,
+      bodyElementId: element.id,
+      drawerVessel: null
+    };
   }
 
   function getWindowTitle(state: VesselWindowState | null): string {
     if (!state) return "";
     const label =
-      state.vesselPath.length === 0
+      state.surface === ROOT_ADDRESS
         ? (presentation[state.vessel]?.label?.replace(/\s+/g, " ") ?? state.vessel)
         : state.vessel;
-    if (state.bodyElementIndex === null) return label;
-    const element = windowSurfaceBody?.vessels[state.vessel]?.contains?.[state.bodyElementIndex];
-    return `${label}: ${element ? describeElement(element) : "embedded body"}`;
+    return state.bodyElementId === null ? label : `${label}: ${state.bodyElementId}`;
   }
 
-  function commitBodyAt(path: BodyPath, nextBody: Body, meta: MutationMeta): void {
+  function commitBodyAt(address: string, nextBody: Body, meta: MutationMeta): void {
     try {
-      const rootBody = replaceBodyAtPath($state.snapshot(document.body) as Body, path, $state.snapshot(nextBody) as Body);
+      const rootBody = replaceBodyAtAddress(
+        $state.snapshot(document.body) as Body,
+        address,
+        $state.snapshot(nextBody) as Body
+      );
       commitConstruction(
         { ...document, body: rootBody },
         presentation,
         viewControls,
-        meta.select ? { path, target: meta.select } : selection,
+        meta.select ? { address, target: meta.select } : selection,
         meta.status,
         true
       );
@@ -296,13 +332,13 @@
   function deleteSelected(): void {
     try {
       if (!selection) return;
-      const body = getBodyAtPath(document.body, selection.path);
+      const body = getBodyAtAddress(document.body, selection.address);
       if (!body) return;
 
       if (selection.target.kind === "connection") {
         const { from, to } = selection.target;
         const { body: nextBody } = disconnect(body, from);
-        commitBodyAt(selection.path, nextBody, {
+        commitBodyAt(selection.address, nextBody, {
           select: { kind: "vessel", id: from.vessel },
           status: `Severed ${from.vessel} ↔ ${to.vessel}`
         });
@@ -315,7 +351,7 @@
 
       const deletedId = selection.target.id;
       const { body: nextBody, collapsed } = deleteVessel(body, deletedId, { collapseOppositeNeighbors: true });
-      commitBodyAt(selection.path, nextBody, {
+      commitBodyAt(selection.address, nextBody, {
         select: { kind: "vessel", id: nextBody.root },
         status: collapsed
           ? `Deleted ${deletedId}, bridged ${collapsed.from.vessel} ↔ ${collapsed.to.vessel}`
@@ -337,7 +373,7 @@
       structuredClone(preset.document),
       structuredClone(preset.presentation),
       structuredClone(INITIAL_VIEW_CONTROLS),
-      { path: [], target: { kind: "vessel", id: preset.document.body.root } },
+      { address: ROOT_ADDRESS, target: { kind: "vessel", id: preset.document.body.root } },
       `Selected ${preset.name}`,
       true
     );
@@ -384,15 +420,15 @@
     presentation = nextPresentation;
     viewControls = nextViewControls;
     if (vesselWindow) {
-      const surface = getBodyAtPath(document.body, vesselWindow.vesselPath);
+      const surface = getBodyAtAddress(document.body, vesselWindow.surface);
       const vessel = surface?.vessels[vesselWindow.vessel];
       if (!vessel) {
         vesselWindow = null;
       } else if (
-        vesselWindow.bodyElementIndex !== null &&
-        !vessel.contains?.[vesselWindow.bodyElementIndex]?.body
+        vesselWindow.bodyElementId !== null &&
+        !vessel.contains?.some((element) => element.id === vesselWindow!.bodyElementId && element.body)
       ) {
-        vesselWindow = { ...vesselWindow, bodyElementIndex: null, drawerVessel: null };
+        vesselWindow = { ...vesselWindow, bodyElementId: null, drawerVessel: null };
       }
     }
     selection = reconcileSelection(nextSelection);
@@ -404,18 +440,20 @@
   }
 
   function reconcileSelection(candidate: Selection | null): Selection {
-    const rootFallback: Selection = { path: [], target: { kind: "vessel", id: document.body.root } };
+    const rootFallback: Selection = { address: ROOT_ADDRESS, target: { kind: "vessel", id: document.body.root } };
     if (!candidate) return rootFallback;
 
-    const body = getBodyAtPath(document.body, candidate.path);
+    const body = getBodyAtAddress(document.body, candidate.address);
     if (!body) return rootFallback;
     if (candidate.target.kind === "vessel") {
-      return body.vessels[candidate.target.id] ? candidate : { path: candidate.path, target: { kind: "vessel", id: body.root } };
+      return body.vessels[candidate.target.id]
+        ? candidate
+        : { address: candidate.address, target: { kind: "vessel", id: body.root } };
     }
 
     const { from, to } = candidate.target;
     const stillConnected = body.vessels[from.vessel]?.ports?.[from.side]?.vessel === to.vessel;
-    return stillConnected ? candidate : { path: candidate.path, target: { kind: "vessel", id: body.root } };
+    return stillConnected ? candidate : { address: candidate.address, target: { kind: "vessel", id: body.root } };
   }
 
   function setErrorStatus(error: unknown): void {
@@ -464,9 +502,9 @@
     onPresetChange={handlePresetChange}
     onViewControlsChange={handleViewControlsChange}
     onPanChange={(nextPan) => (pan = nextPan)}
-    onSelect={(target) => selectAt([], target)}
+    onSelect={(target) => selectAt(ROOT_ADDRESS, target)}
     onOpenVessel={openVessel}
-    onMutate={(nextBody, meta) => commitBodyAt([], nextBody, meta)}
+    onMutate={(nextBody, meta) => commitBodyAt(ROOT_ADDRESS, nextBody, meta)}
     onMutationError={setErrorStatus}
     onDeleteSelected={deleteSelected}
   >
@@ -474,7 +512,7 @@
       {#if vesselWindow && windowVessel}
         <VesselWindow
           title={windowTitle}
-          list={vesselWindow.bodyElementIndex === null
+          list={vesselWindow.bodyElementId === null
             ? { elements: windowVessel.contains ?? [], accepts: windowVessel.accepts }
             : null}
           body={windowBody}
@@ -489,28 +527,23 @@
           selection={windowSelection}
           dropTargets={windowDropTargets}
           rejectVesselId={windowRejectVesselId}
-          onOpenBodyElement={(index) =>
-            (vesselWindow = { ...vesselWindow!, bodyElementIndex: index, drawerVessel: null })}
-          onDrawerOpenBodyElement={(index) =>
-            (vesselWindow = {
-              vesselPath: windowCanvasPath!,
-              vessel: vesselWindow!.drawerVessel!,
-              bodyElementIndex: index,
-              drawerVessel: null
-            })}
-          onBack={vesselWindow.bodyElementIndex !== null
-            ? () => (vesselWindow = { ...vesselWindow!, bodyElementIndex: null, drawerVessel: null })
+          onOpenBodyElement={openBodyElement}
+          onDrawerOpenBodyElement={openDrawerBodyElement}
+          onBack={vesselWindow.bodyElementId !== null
+            ? () => (vesselWindow = { ...vesselWindow!, bodyElementId: null, drawerVessel: null })
             : null}
           onClose={() => (vesselWindow = null)}
           onDrawerClose={() => (vesselWindow = { ...vesselWindow!, drawerVessel: null })}
-          onSelect={(target) => windowCanvasPath && selectAt(windowCanvasPath, target)}
+          onSelect={(target) => windowCanvasAddress !== null && selectAt(windowCanvasAddress, target)}
           onOpenVessel={(id) => (vesselWindow = { ...vesselWindow!, drawerVessel: id })}
-          onMutate={(nextBody, meta) => windowCanvasPath && commitBodyAt(windowCanvasPath, nextBody, meta)}
+          onMutate={(nextBody, meta) =>
+            windowCanvasAddress !== null && commitBodyAt(windowCanvasAddress, nextBody, meta)}
           onMutationError={setErrorStatus}
           onListPointerDown={(event, index) =>
-            beginElementDrag(event, vesselWindow!.vesselPath, vesselWindow!.vessel, index)}
+            beginElementDrag(event, vesselWindow!.surface, vesselWindow!.vessel, index)}
           onDrawerPointerDown={(event, index) =>
-            windowCanvasPath && beginElementDrag(event, windowCanvasPath, vesselWindow!.drawerVessel!, index)}
+            windowCanvasAddress !== null &&
+            beginElementDrag(event, windowCanvasAddress, vesselWindow!.drawerVessel!, index)}
           onElementPointerMove={updateElementDrag}
           onElementPointerUp={endElementDrag}
         />
@@ -524,12 +557,12 @@
       selectedId={selectedRootVesselId}
       nodeRanges={nodeRanges}
       onSourceChange={handleConstructionSourceChange}
-      onSelectNode={(id) => selectAt([], { kind: "vessel", id })}
+      onSelectNode={(id) => selectAt(ROOT_ADDRESS, { kind: "vessel", id })}
     />
   {:else}
     <PoolPanel
       elements={poolElements}
-      onElementPointerDown={(event, index) => beginElementDrag(event, [], "pool", index)}
+      onElementPointerDown={(event, index) => beginElementDrag(event, ROOT_ADDRESS, "pool", index)}
       onElementPointerMove={updateElementDrag}
       onElementPointerUp={endElementDrag}
     />

@@ -12,13 +12,15 @@ import { formatConstructionSource, getConstructionNodeRanges, parseConstructionS
 import {
   canDisconnect,
   generatePresentation,
+  joinAddress,
   legalConnectTargets,
   legalDropVessels,
-  getBodyAtPath,
+  getBodyAtAddress,
   getBounds,
   getRenderNodes,
   getView,
-  replaceBodyAtPath
+  replaceBodyAtAddress,
+  ROOT_ADDRESS
 } from "./workbench";
 
 describe("paperdoll viewer construction flow", () => {
@@ -184,45 +186,60 @@ describe("paperdoll viewer construction flow", () => {
   });
 });
 
-describe("body path helpers", () => {
-  const BACKPACK_PATH = [{ vessel: "back", elementIndex: 0 }];
+describe("body address helpers", () => {
+  const BACKPACK_ADDRESS = joinAddress(ROOT_ADDRESS, "back", "nested-backpack");
 
-  it("resolves the root body for an empty path", () => {
-    expect(getBodyAtPath(DEFAULT_DOCUMENT.body, [])).toBe(DEFAULT_DOCUMENT.body);
+  it("resolves the root body for the root address", () => {
+    expect(getBodyAtAddress(DEFAULT_DOCUMENT.body, ROOT_ADDRESS)).toBe(DEFAULT_DOCUMENT.body);
   });
 
-  it("resolves a nested body through vessel/element segments", () => {
-    const backpack = getBodyAtPath(DEFAULT_DOCUMENT.body, BACKPACK_PATH);
+  it("resolves a nested body through a protocol address", () => {
+    expect(BACKPACK_ADDRESS).toBe("back/nested-backpack");
+    const backpack = getBodyAtAddress(DEFAULT_DOCUMENT.body, BACKPACK_ADDRESS);
 
     expect(backpack?.root).toBe("pack-shell");
     expect(backpack?.vessels["top-pocket"]).toBeDefined();
   });
 
-  it("returns null for paths that do not lead to a body", () => {
-    expect(getBodyAtPath(DEFAULT_DOCUMENT.body, [{ vessel: "feet", elementIndex: 0 }])).toBeNull();
-    expect(getBodyAtPath(DEFAULT_DOCUMENT.body, [{ vessel: "missing", elementIndex: 0 }])).toBeNull();
+  it("returns null for addresses that do not lead to a body", () => {
+    // element exists but has no embedded body
+    expect(getBodyAtAddress(DEFAULT_DOCUMENT.body, "feet/leather-moccasins")).toBeNull();
+    // vessel address (odd segment count) names a vessel, not an element
+    expect(getBodyAtAddress(DEFAULT_DOCUMENT.body, "feet")).toBeNull();
+    expect(getBodyAtAddress(DEFAULT_DOCUMENT.body, "missing/nothing")).toBeNull();
   });
 
-  it("replaces a nested body immutably along the path", () => {
-    const backpack = getBodyAtPath(DEFAULT_DOCUMENT.body, BACKPACK_PATH)!;
+  it("replaces a nested body immutably along the address", () => {
+    const backpack = getBodyAtAddress(DEFAULT_DOCUMENT.body, BACKPACK_ADDRESS)!;
     const mutated = insertVessel(backpack, {}, { id: "side-loop" }).body;
 
-    const nextRoot = replaceBodyAtPath(DEFAULT_DOCUMENT.body, BACKPACK_PATH, mutated);
+    const nextRoot = replaceBodyAtAddress(DEFAULT_DOCUMENT.body, BACKPACK_ADDRESS, mutated);
 
-    expect(getBodyAtPath(nextRoot, BACKPACK_PATH)?.vessels["side-loop"]).toBeDefined();
-    expect(getBodyAtPath(DEFAULT_DOCUMENT.body, BACKPACK_PATH)?.vessels["side-loop"]).toBeUndefined();
+    expect(getBodyAtAddress(nextRoot, BACKPACK_ADDRESS)?.vessels["side-loop"]).toBeDefined();
+    expect(getBodyAtAddress(DEFAULT_DOCUMENT.body, BACKPACK_ADDRESS)?.vessels["side-loop"]).toBeUndefined();
     expect(nextRoot.vessels.feet).toBe(DEFAULT_DOCUMENT.body.vessels.feet);
     expect(parseDocument({ protocol: "paper-doll/v3", body: nextRoot }).ok).toBe(true);
   });
 
-  it("replaces the root body for an empty path", () => {
-    const next = insertVessel(DEFAULT_DOCUMENT.body, {}, { id: "extra" }).body;
-    expect(replaceBodyAtPath(DEFAULT_DOCUMENT.body, [], next)).toBe(next);
+  it("addresses stay valid when contains order changes", () => {
+    // an index-based path would break here; an id-based address does not
+    const reordered = structuredClone(DEFAULT_DOCUMENT.body);
+    reordered.vessels.back.contains = [
+      { kind: "item", type: "back", id: "cloak" },
+      ...(reordered.vessels.back.contains ?? [])
+    ];
+
+    expect(getBodyAtAddress(reordered, BACKPACK_ADDRESS)?.root).toBe("pack-shell");
   });
 
-  it("throws when replacing along an invalid path", () => {
+  it("replaces the root body for the root address", () => {
+    const next = insertVessel(DEFAULT_DOCUMENT.body, {}, { id: "extra" }).body;
+    expect(replaceBodyAtAddress(DEFAULT_DOCUMENT.body, ROOT_ADDRESS, next)).toBe(next);
+  });
+
+  it("throws when replacing along an invalid address", () => {
     expect(() =>
-      replaceBodyAtPath(DEFAULT_DOCUMENT.body, [{ vessel: "feet", elementIndex: 0 }], DEFAULT_DOCUMENT.body)
+      replaceBodyAtAddress(DEFAULT_DOCUMENT.body, "feet/leather-moccasins", DEFAULT_DOCUMENT.body)
     ).toThrow(/No embedded body/);
   });
 
@@ -300,7 +317,7 @@ describe("body path helpers", () => {
   });
 
   it("generates presentation for arbitrary bodies", () => {
-    const backpack = getBodyAtPath(DEFAULT_DOCUMENT.body, BACKPACK_PATH)!;
+    const backpack = getBodyAtAddress(DEFAULT_DOCUMENT.body, BACKPACK_ADDRESS)!;
     const presentation = generatePresentation(backpack);
 
     expect(presentation["pack-shell"].icon).toBe("@");
