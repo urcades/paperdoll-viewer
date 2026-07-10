@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { connect, deleteVessel, deriveLayout, insertVessel, parseDocument, type Body } from "paperdoll";
+import { connect, deleteVessel, deriveLayout, insertElement, insertVessel, parseDocument, type Body } from "paperdoll";
+import { applyStrike, deriveCondition, getCombatData, healAll, WEAPONS } from "./combat";
 import {
   DEFAULT_CANVAS_PADDING,
   DEFAULT_CONNECTOR_LENGTH,
@@ -36,7 +37,7 @@ describe("paperdoll viewer construction flow", () => {
   });
 
   it("ships valid selectable body presets", () => {
-    expect(PAPER_DOLL_PRESETS.map((preset) => preset.id)).toEqual(["humanoid", "mech", "vehicle", "satellite", "hand", "patient"]);
+    expect(PAPER_DOLL_PRESETS.map((preset) => preset.id)).toEqual(["humanoid", "mech", "vehicle", "satellite", "hand", "combatant"]);
 
     for (const preset of PAPER_DOLL_PRESETS) {
       const parsed = parseDocument(preset.document);
@@ -318,20 +319,21 @@ describe("body address helpers", () => {
   });
 
   it("rewrites element data as a remove + insert-at composition", () => {
-    const patient = PAPER_DOLL_PRESETS.find((preset) => preset.id === "patient")!.document.body;
-    const damaged = replaceElementData(patient, "head", 0, { hp: 3, max: 8 });
+    const combatant = PAPER_DOLL_PRESETS.find((preset) => preset.id === "combatant")!.document.body;
+    const before = combatant.vessels.head.contains![0];
+    const damaged = replaceElementData(combatant, "head", 0, { ...(before.data as object), integrity: 3 });
 
     expect(damaged.vessels.head.contains?.[0]).toMatchObject({
-      kind: "part",
-      id: "flesh",
-      data: { hp: 3, max: 8 }
+      kind: "tissue",
+      id: "skin",
+      data: { integrity: 3 }
     });
-    // same position, same identity, untouched siblings (protocol ops deep-clone)
-    expect(damaged.vessels.head.contains?.length).toBe(1);
-    expect(damaged.vessels.torso).toStrictEqual(patient.vessels.torso);
+    // same position, untouched siblings (protocol ops deep-clone)
+    expect(damaged.vessels.head.contains?.length).toBe(combatant.vessels.head.contains!.length);
+    expect(damaged.vessels.torso).toStrictEqual(combatant.vessels.torso);
     expect(parseDocument({ protocol: "paper-doll/v3", body: damaged }).ok).toBe(true);
     // original untouched
-    expect(patient.vessels.head.contains?.[0].data).toMatchObject({ hp: 8 });
+    expect(combatant.vessels.head.contains?.[0].data).toMatchObject({ integrity: 15 });
   });
 
   it("generates presentation for arbitrary bodies", () => {
@@ -340,5 +342,68 @@ describe("body address helpers", () => {
 
     expect(presentation["pack-shell"].icon).toBe("@");
     expect(presentation["top-pocket"].label).toBe("Top\nPocket");
+  });
+});
+
+
+describe("combat model", () => {
+  const combatant = () => structuredClone(PAPER_DOLL_PRESETS.find((preset) => preset.id === "combatant")!.document.body);
+  const weapon = (id: string) => WEAPONS.find((candidate) => candidate.id === id)!;
+  const layer = (body: Body, vessel: string, id: string) =>
+    getCombatData(body.vessels[vessel].contains!.find((element) => element.id === id)!)!;
+  const midRng = () => 0.5;
+
+  it("an edged strike cuts soft tissue but the skull resists shear", () => {
+    const { body, log } = applyStrike(combatant(), "head", weapon("dagger"), midRng);
+
+    expect(layer(body, "head", "skin").integrity).toBeLessThan(15);
+    expect(log).toContain("strikes the head");
+    // skull shear yield far exceeds dagger momentum; at most blunt denting, never a cut tier beyond that
+    expect(layer(body, "head", "brain").integrity).toBe(20);
+  });
+
+  it("a warhammer transmits impact through the skull to the brain", () => {
+    const { body } = applyStrike(combatant(), "head", weapon("warhammer"), midRng);
+
+    expect(layer(body, "head", "skull").integrity).toBeLessThan(40);
+    expect(layer(body, "head", "brain").integrity).toBeLessThan(20);
+  });
+
+  it("an iron helm deflects a dagger entirely", () => {
+    const body = combatant();
+    const { body: armored } = { body: insertElement(body, "head", {
+      kind: "item", type: "helm", id: "iron-helm",
+      data: { integrity: 40, max: 40, material: { shearY: 145, shearF: 160, impactY: 70, impactF: 120, absorb: 0.15 } }
+    }) };
+
+    const { body: struck, log } = applyStrike(armored, "head", weapon("dagger"), midRng);
+
+    expect(log).toContain("glances off the iron-helm");
+    expect(layer(struck, "head", "skin").integrity).toBe(15);
+    expect(layer(struck, "head", "brain").integrity).toBe(20);
+  });
+
+  it("repeated strikes destroy the brain and derive death", () => {
+    let body = combatant();
+    for (let index = 0; index < 12; index += 1) {
+      body = applyStrike(body, "head", weapon("warhammer"), midRng).body;
+    }
+
+    expect(layer(body, "head", "brain").integrity).toBe(0);
+    expect(deriveCondition(body)).toContainEqual(expect.stringContaining("dead (brain destroyed)"));
+  });
+
+  it("healAll restores every layer and clears conditions", () => {
+    let body = combatant();
+    body = applyStrike(body, "torso", weapon("sword"), midRng).body;
+    body = healAll(body);
+
+    expect(layer(body, "torso", "skin").integrity).toBe(25);
+    expect(deriveCondition(body)).toEqual([]);
+  });
+
+  it("documents stay protocol-valid through strikes", () => {
+    const { body } = applyStrike(combatant(), "left-arm", weapon("sword"), midRng);
+    expect(parseDocument({ protocol: "paper-doll/v3", body }).ok).toBe(true);
   });
 });

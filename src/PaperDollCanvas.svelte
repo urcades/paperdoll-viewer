@@ -1,5 +1,6 @@
 <script lang="ts">
   import { type Body } from "paperdoll";
+  import { WEAPONS } from "./combat";
   import type { Snippet } from "svelte";
   import BodyCanvas from "./BodyCanvas.svelte";
   import { type SelectionTarget, type ViewControls } from "./workbench";
@@ -27,7 +28,8 @@
     mode: Mode;
     status: string;
     canDelete: boolean;
-    canDamage: boolean;
+    canStrike: boolean;
+    weaponId: string;
     presets: readonly PaperDollPreset[];
     selectedPresetId: string;
     pan: Pan;
@@ -42,7 +44,8 @@
     onMutate: (nextBody: Body, meta: MutationMeta) => void;
     onMutationError: (error: unknown) => void;
     onDeleteSelected: () => void;
-    onDamage: () => void;
+    onWeaponChange: (weaponId: string) => void;
+    onStrike: () => void;
     onHeal: () => void;
   };
 
@@ -56,7 +59,8 @@
     mode,
     status,
     canDelete,
-    canDamage,
+    canStrike,
+    weaponId,
     presets,
     selectedPresetId,
     pan,
@@ -71,7 +75,8 @@
     onMutate,
     onMutationError,
     onDeleteSelected,
-    onDamage,
+    onWeaponChange,
+    onStrike,
     onHeal
   }: Props = $props();
 
@@ -146,8 +151,17 @@
         />
       </label>
       -->
-      {#if canDamage}
-        <button class="damage-button" type="button" onclick={onDamage}>damage</button>
+      {#if canStrike}
+        <select
+          class="weapon-select"
+          value={weaponId}
+          onchange={(event) => onWeaponChange((event.currentTarget as HTMLSelectElement).value)}
+        >
+          {#each WEAPONS as weapon (weapon.id)}
+            <option value={weapon.id}>{weapon.name}</option>
+          {/each}
+        </select>
+        <button class="damage-button" type="button" onclick={onStrike}>strike</button>
         <button class="heal-button" type="button" onclick={onHeal}>heal</button>
       {/if}
       <button class="delete-node" type="button" disabled={!canDelete} onclick={onDeleteSelected}>delete</button>

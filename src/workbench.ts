@@ -71,6 +71,7 @@ export type RenderNode = {
   accepts?: readonly string[];
   item?: string;
   hp?: { current: number; max: number };
+  dead?: boolean;
 };
 
 export function getView(controls: ViewControls): RenderView {
@@ -137,19 +138,24 @@ function toRenderNode(
     icon: vesselPresentation?.icon,
     accepts: vessel?.accepts?.map((token) => (token.type ? `${token.kind}/${token.type}` : token.kind)),
     item: vessel?.contains?.map(formatElement).join(", "),
-    hp: findHp(vessel?.contains)
+    ...summarizeIntegrity(vessel?.contains)
   };
 }
 
-function findHp(contains: Vessel["contains"]): RenderNode["hp"] {
+function summarizeIntegrity(contains: Vessel["contains"]): Pick<RenderNode, "hp" | "dead"> {
+  let current = 0;
+  let max = 0;
+  let dead = false;
   for (const element of contains ?? []) {
     const data = element.data;
-    if (data && typeof data === "object" && !Array.isArray(data)) {
-      const { hp, max } = data as { hp?: unknown; max?: unknown };
-      if (typeof hp === "number" && typeof max === "number") return { current: hp, max };
-    }
+    if (!data || typeof data !== "object" || Array.isArray(data)) continue;
+    const record = data as { integrity?: unknown; max?: unknown; vital?: unknown };
+    if (typeof record.integrity !== "number" || typeof record.max !== "number") continue;
+    current += record.integrity;
+    max += record.max;
+    if (record.vital === true && record.integrity <= 0) dead = true;
   }
-  return undefined;
+  return max > 0 ? { hp: { current, max }, dead } : {};
 }
 
 function formatElement(element: { kind: string; type?: string; id?: string }): string {

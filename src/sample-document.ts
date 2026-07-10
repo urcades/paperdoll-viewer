@@ -551,65 +551,193 @@ const HAND_PRESENTATION: Record<string, VesselPresentation> = {
   "pinky-tip": { label: "Pinky\nTip", icon: "J" }
 };
 
-// The patient: every vessel contains a "part" element whose data carries hp.
-// Health lives on elements (vessels have no data field by design) — damage is
-// a data rewrite, expressed as the protocol composition remove + insert-at.
-const part = (max: number) => ({
-  kind: "part",
-  type: "flesh",
-  id: "flesh",
-  data: { hp: max, max }
+// The combatant: a simplified Dwarf Fortress health model. Each part vessel
+// contains an ordered stack of tissue/organ elements (list order = penetration
+// order) whose data carries material properties and integrity; armor is worn
+// as typed items walked before the tissue. See docs/superpowers/specs/
+// 2026-07-10-combatant-demo-design.md and src/combat.ts.
+type MaterialSpec = { shearY: number; shearF: number; impactY: number; impactF: number; absorb: number };
+
+const TISSUE_MATERIALS: Record<string, MaterialSpec> = {
+  skin: { shearY: 20, shearF: 40, impactY: 15, impactF: 50, absorb: 0.1 },
+  fat: { shearY: 25, shearF: 45, impactY: 20, impactF: 60, absorb: 0.35 },
+  muscle: { shearY: 35, shearF: 60, impactY: 30, impactF: 70, absorb: 0.25 },
+  bone: { shearY: 115, shearF: 130, impactY: 40, impactF: 80, absorb: 0.2 },
+  organ: { shearY: 15, shearF: 30, impactY: 20, impactF: 60, absorb: 0.15 },
+  nerve: { shearY: 30, shearF: 30, impactY: 45, impactF: 40, absorb: 0.05 }
+};
+
+const ARMOR_MATERIALS: Record<string, MaterialSpec> = {
+  iron: { shearY: 145, shearF: 160, impactY: 70, impactF: 120, absorb: 0.15 },
+  leather: { shearY: 45, shearF: 60, impactY: 25, impactF: 70, absorb: 0.5 }
+};
+
+const tissue = (type: keyof typeof TISSUE_MATERIALS, id: string, max: number) => ({
+  kind: "tissue",
+  type: type as string,
+  id,
+  data: { integrity: max, max, material: TISSUE_MATERIALS[type] }
 });
 
-const bodyPart = (max: number, ports: NonNullable<PaperDollDocument["body"]["vessels"][string]["ports"]>) => ({
-  accepts: [{ kind: "part" }],
-  contains: [part(max)],
-  ports
+const organ = (id: string, max: number, vital = false) => ({
+  kind: "organ",
+  type: "organ",
+  id,
+  data: { integrity: max, max, material: TISSUE_MATERIALS.organ, ...(vital ? { vital: true } : {}) }
 });
 
-const PATIENT_DOCUMENT: PaperDollDocument = {
+const armorItem = (type: string, id: string, metal: keyof typeof ARMOR_MATERIALS, max: number) => ({
+  kind: "item",
+  type,
+  id,
+  data: { integrity: max, max, material: ARMOR_MATERIALS[metal] }
+});
+
+const fleshLayers = (scale: number, withNerve: boolean) => [
+  tissue("skin", "skin", Math.round(20 * scale)),
+  tissue("fat", "fat", Math.round(15 * scale)),
+  tissue("muscle", "muscle", Math.round(30 * scale)),
+  tissue("bone", "bone", Math.round(35 * scale)),
+  ...(withNerve ? [tissue("nerve", "nerve", 10)] : [])
+];
+
+const partAccepts = (...armorTypes: string[]) => [
+  { kind: "tissue" },
+  { kind: "organ" },
+  ...armorTypes.map((type) => ({ kind: "item", type }))
+];
+
+const COMBATANT_DOCUMENT: PaperDollDocument = {
   protocol: PAPER_DOLL_PROTOCOL,
   body: {
     root: "torso",
     vessels: {
-      head: bodyPart(8, { bottom: { vessel: "torso", side: "top" } }),
-      "left-hand": bodyPart(6, { right: { vessel: "left-arm", side: "left" } }),
-      "left-arm": bodyPart(12, {
-        left: { vessel: "left-hand", side: "right" },
-        right: { vessel: "torso", side: "left" }
-      }),
-      torso: bodyPart(20, {
-        top: { vessel: "head", side: "bottom" },
-        left: { vessel: "left-arm", side: "right" },
-        right: { vessel: "right-arm", side: "left" },
-        bottom: { vessel: "hips", side: "top" }
-      }),
-      "right-arm": bodyPart(12, {
-        left: { vessel: "torso", side: "right" },
-        right: { vessel: "right-hand", side: "left" }
-      }),
-      "right-hand": bodyPart(6, { left: { vessel: "right-arm", side: "right" } }),
-      hips: bodyPart(14, {
-        top: { vessel: "torso", side: "bottom" },
-        left: { vessel: "left-leg", side: "right" },
-        right: { vessel: "right-leg", side: "left" }
-      }),
-      "left-leg": bodyPart(14, {
-        right: { vessel: "hips", side: "left" },
-        bottom: { vessel: "left-foot", side: "top" }
-      }),
-      "right-leg": bodyPart(14, {
-        left: { vessel: "hips", side: "right" },
-        bottom: { vessel: "right-foot", side: "top" }
-      }),
-      "left-foot": bodyPart(6, { top: { vessel: "left-leg", side: "bottom" } }),
-      "right-foot": bodyPart(6, { top: { vessel: "right-leg", side: "bottom" } })
+      pool: {
+        contains: [
+          armorItem("helm", "iron-helm", "iron", 40),
+          armorItem("helm", "leather-cap", "leather", 25),
+          armorItem("mail", "mail-shirt", "iron", 60),
+          armorItem("mail", "leather-jerkin", "leather", 35),
+          armorItem("gauntlet", "iron-gauntlets", "iron", 30),
+          armorItem("boot", "leather-boots", "leather", 25)
+        ]
+      },
+      head: {
+        accepts: partAccepts("helm"),
+        contains: [
+          tissue("skin", "skin", 15),
+          tissue("fat", "fat", 10),
+          tissue("muscle", "muscle", 15),
+          tissue("bone", "skull", 40),
+          organ("brain", 20, true)
+        ],
+        ports: { bottom: { vessel: "neck", side: "top" } }
+      },
+      neck: {
+        accepts: partAccepts(),
+        contains: [
+          tissue("skin", "skin", 12),
+          tissue("muscle", "muscle", 18),
+          tissue("bone", "spine", 30),
+          tissue("nerve", "spinal-cord", 10)
+        ],
+        ports: {
+          top: { vessel: "head", side: "bottom" },
+          bottom: { vessel: "torso", side: "top" }
+        }
+      },
+      "left-hand": {
+        accepts: partAccepts("gauntlet"),
+        contains: fleshLayers(0.5, true),
+        ports: { right: { vessel: "left-arm", side: "left" } }
+      },
+      "left-arm": {
+        accepts: partAccepts(),
+        contains: fleshLayers(1, true),
+        ports: {
+          left: { vessel: "left-hand", side: "right" },
+          right: { vessel: "torso", side: "left" }
+        }
+      },
+      torso: {
+        accepts: partAccepts("mail"),
+        contains: [
+          tissue("skin", "skin", 25),
+          tissue("fat", "fat", 20),
+          tissue("muscle", "muscle", 40),
+          tissue("bone", "ribs", 45),
+          organ("heart", 15, true),
+          organ("left-lung", 15),
+          organ("right-lung", 15),
+          organ("guts", 25)
+        ],
+        ports: {
+          top: { vessel: "neck", side: "bottom" },
+          left: { vessel: "left-arm", side: "right" },
+          right: { vessel: "right-arm", side: "left" },
+          bottom: { vessel: "hips", side: "top" }
+        }
+      },
+      "right-arm": {
+        accepts: partAccepts(),
+        contains: fleshLayers(1, true),
+        ports: {
+          left: { vessel: "torso", side: "right" },
+          right: { vessel: "right-hand", side: "left" }
+        }
+      },
+      "right-hand": {
+        accepts: partAccepts("gauntlet"),
+        contains: fleshLayers(0.5, true),
+        ports: { left: { vessel: "right-arm", side: "right" } }
+      },
+      hips: {
+        accepts: partAccepts(),
+        contains: [
+          tissue("skin", "skin", 18),
+          tissue("fat", "fat", 15),
+          tissue("muscle", "muscle", 30),
+          tissue("bone", "pelvis", 40)
+        ],
+        ports: {
+          top: { vessel: "torso", side: "bottom" },
+          left: { vessel: "left-leg", side: "right" },
+          right: { vessel: "right-leg", side: "left" }
+        }
+      },
+      "left-leg": {
+        accepts: partAccepts(),
+        contains: fleshLayers(1.2, true),
+        ports: {
+          right: { vessel: "hips", side: "left" },
+          bottom: { vessel: "left-foot", side: "top" }
+        }
+      },
+      "right-leg": {
+        accepts: partAccepts(),
+        contains: fleshLayers(1.2, true),
+        ports: {
+          left: { vessel: "hips", side: "right" },
+          bottom: { vessel: "right-foot", side: "top" }
+        }
+      },
+      "left-foot": {
+        accepts: partAccepts("boot"),
+        contains: fleshLayers(0.5, false),
+        ports: { top: { vessel: "left-leg", side: "bottom" } }
+      },
+      "right-foot": {
+        accepts: partAccepts("boot"),
+        contains: fleshLayers(0.5, false),
+        ports: { top: { vessel: "right-leg", side: "bottom" } }
+      }
     }
   }
 };
 
-const PATIENT_PRESENTATION: Record<string, VesselPresentation> = {
+const COMBATANT_PRESENTATION: Record<string, VesselPresentation> = {
   head: { label: "Head", icon: "A" },
+  neck: { label: "Neck", icon: "N" },
   "left-hand": { label: "Left\nHand", icon: "B" },
   "left-arm": { label: "Left\nArm", icon: "C" },
   torso: { label: "Torso", icon: "@" },
@@ -654,10 +782,10 @@ export const PAPER_DOLL_PRESETS: readonly PaperDollPreset[] = [
     presentation: HAND_PRESENTATION
   },
   {
-    id: "patient",
-    name: "Patient",
-    document: PATIENT_DOCUMENT,
-    presentation: PATIENT_PRESENTATION
+    id: "combatant",
+    name: "Combatant",
+    document: COMBATANT_DOCUMENT,
+    presentation: COMBATANT_PRESENTATION
   }
 ];
 

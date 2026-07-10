@@ -29,11 +29,11 @@
     getConstructionNodeRanges,
     parseConstructionSource
   } from "./construction-source";
+  import { applyStrike, deriveCondition, hasCombatLayers, healAll, WEAPONS } from "./combat";
   import {
     canDisconnect,
     describeElement,
     getBodyAtAddress,
-    replaceElementData,
     joinAddress,
     legalDropVessels,
     replaceBodyAtAddress,
@@ -132,7 +132,12 @@
   );
   let nodeRanges = $derived(getConstructionNodeRanges(constructionSource));
   let poolElements = $derived(document.body.vessels.pool?.contains ?? []);
-  let canDamage = $derived(findParts(document.body).length > 0);
+  let weaponId = $state(WEAPONS[1].id);
+  let combatVessels = $derived(
+    Object.keys(document.body.vessels).filter((id) => hasCombatLayers(document.body, id))
+  );
+  let canStrike = $derived(combatVessels.length > 0);
+  let condition = $derived(deriveCondition(document.body));
   let rootDropTargets = $derived(
     elementDrag?.active && elementDrag.address === ROOT_ADDRESS ? elementDrag.targets : null
   );
@@ -234,56 +239,33 @@
     return sameSurface ? ((slot as HTMLElement).dataset.nodeId ?? null) : null;
   }
 
-  type PartRef = {
-    vessel: string;
-    index: number;
-    hp: number;
-    max: number;
-    data: Record<string, unknown>;
-  };
-
-  function findParts(body: Body): PartRef[] {
-    return Object.entries(body.vessels).flatMap(([vesselId, vessel]) =>
-      (vessel.contains ?? []).flatMap((element, index) => {
-        const data = element.data;
-        if (!data || typeof data !== "object" || Array.isArray(data)) return [];
-        const { hp, max } = data as { hp?: unknown; max?: unknown };
-        if (typeof hp !== "number" || typeof max !== "number") return [];
-        return [{ vessel: vesselId, index, hp, max, data: data as Record<string, unknown> }];
-      })
-    );
-  }
-
-  function damageRandomPart(): void {
+  function strike(): void {
     try {
       const body = $state.snapshot(document.body) as Body;
-      const living = findParts(body).filter((partRef) => partRef.hp > 0);
-      if (living.length === 0) {
-        status = "Nothing left to damage — heal first";
-        return;
-      }
+      const selected =
+        selection?.address === ROOT_ADDRESS && selection.target.kind === "vessel" ? selection.target.id : null;
+      const targetId =
+        selected && hasCombatLayers(body, selected)
+          ? selected
+          : combatVessels[Math.floor(Math.random() * combatVessels.length)];
+      const weapon = WEAPONS.find((candidate) => candidate.id === weaponId) ?? WEAPONS[0];
 
-      const target = living[Math.floor(Math.random() * living.length)];
-      const amount = 1 + Math.floor(Math.random() * 6);
-      const hp = Math.max(0, target.hp - amount);
-      const nextBody = replaceElementData(body, target.vessel, target.index, { ...target.data, hp });
-      commitBodyAt(ROOT_ADDRESS, nextBody, {
-        select: { kind: "vessel", id: target.vessel },
-        status: `${target.vessel} took ${amount} — ${hp}/${target.max}${hp === 0 ? " — destroyed" : ""}`
+      const result = applyStrike(body, targetId, weapon);
+      const conditions = deriveCondition(result.body);
+      commitBodyAt(ROOT_ADDRESS, result.body, {
+        select: { kind: "vessel", id: targetId },
+        status: conditions.length > 0 ? `${result.log} — ${conditions.join(", ")}` : result.log
       });
     } catch (error) {
       setErrorStatus(error);
     }
   }
 
-  function healAllParts(): void {
+  function healCombatant(): void {
     try {
-      let body = $state.snapshot(document.body) as Body;
-      for (const partRef of findParts(body)) {
-        if (partRef.hp === partRef.max) continue;
-        body = replaceElementData(body, partRef.vessel, partRef.index, { ...partRef.data, hp: partRef.max });
-      }
-      commitBodyAt(ROOT_ADDRESS, body, { status: "All parts restored" });
+      commitBodyAt(ROOT_ADDRESS, healAll($state.snapshot(document.body) as Body), {
+        status: "All wounds healed"
+      });
     } catch (error) {
       setErrorStatus(error);
     }
@@ -551,7 +533,8 @@
     {mode}
     {status}
     {canDelete}
-    {canDamage}
+    {canStrike}
+    {weaponId}
     presets={PAPER_DOLL_PRESETS}
     {selectedPresetId}
     {pan}
@@ -565,8 +548,9 @@
     onMutate={(nextBody, meta) => commitBodyAt(ROOT_ADDRESS, nextBody, meta)}
     onMutationError={setErrorStatus}
     onDeleteSelected={deleteSelected}
-    onDamage={damageRandomPart}
-    onHeal={healAllParts}
+    onWeaponChange={(id) => (weaponId = id)}
+    onStrike={strike}
+    onHeal={healCombatant}
   >
     {#snippet window()}
       {#if vesselWindow && windowVessel}
