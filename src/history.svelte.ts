@@ -1,20 +1,28 @@
-// Unified edit history over paperfold patches. Construction edits and
-// simulation ticks share one stack (separate stacks would make "undo a
-// construction edit under a sim run" incoherent); entries are distinguished
-// by tag. Undo/redo return the patch to apply — the App commit funnel applies
-// it and refreshes derived state without pushing a new entry.
+// Unified edit history over paperfold patches, scene-aware. A history entry
+// carries one patch per touched body (a cross-body drag touches two), plus a
+// tag distinguishing construction edits from simulation ticks. Undo/redo and
+// seekTo return proxy-free snapshots — paperfold's internals reject $state
+// proxies.
 
 import { composePatches, type PaperfoldDocument } from "paperfold";
 
 export type HistoryTag = "construct" | "sim";
 
-export type HistoryEntry = {
+export type BodyStep = {
+  bodyName: string;
   patch: PaperfoldDocument;
   inverse: PaperfoldDocument;
+};
+
+export type HistoryEntry = {
+  steps: BodyStep[];
   label: string;
   tag: HistoryTag;
   runId: number | null;
 };
+
+/** A directed step ready to apply: which body, and the patch to run. */
+export type AppliedStep = { bodyName: string; patch: PaperfoldDocument };
 
 export class History {
   past = $state<HistoryEntry[]>([]);
@@ -33,20 +41,31 @@ export class History {
     this.future = [];
   }
 
-  /** Pop the newest entry; apply its `inverse` to walk back. */
-  undo(): HistoryEntry | null {
+  /** Pop the newest entry; returns the steps to apply, inverses in reverse order. */
+  undo(): { label: string; steps: AppliedStep[] } | null {
     const entry = this.past.pop() ?? null;
-    if (entry) this.future.push(entry);
-    // Snapshot on the way out: stored entries are $state proxies, which
-    // paperfold's internals (structuredClone) reject.
-    return entry ? ($state.snapshot(entry) as HistoryEntry) : null;
+    if (!entry) return null;
+    this.future.push(entry);
+    const snapshot = $state.snapshot(entry) as HistoryEntry;
+    return {
+      label: snapshot.label,
+      steps: snapshot.steps
+        .slice()
+        .reverse()
+        .map((step) => ({ bodyName: step.bodyName, patch: step.inverse }))
+    };
   }
 
-  /** Pop the newest undone entry; apply its `patch` to walk forward. */
-  redo(): HistoryEntry | null {
+  /** Pop the newest undone entry; returns the forward steps to apply. */
+  redo(): { label: string; steps: AppliedStep[] } | null {
     const entry = this.future.pop() ?? null;
-    if (entry) this.past.push(entry);
-    return entry ? ($state.snapshot(entry) as HistoryEntry) : null;
+    if (!entry) return null;
+    this.past.push(entry);
+    const snapshot = $state.snapshot(entry) as HistoryEntry;
+    return {
+      label: snapshot.label,
+      steps: snapshot.steps.map((step) => ({ bodyName: step.bodyName, patch: step.patch }))
+    };
   }
 
   /** History barrier: preset swaps and source-panel rewrites aren't diffable edits. */
@@ -65,24 +84,44 @@ export class History {
   }
 
   /**
-   * Move the cursor to `index` (0 = before the first entry) and return the
-   * single composed patch that carries the body there — inverses when
+   * Move the cursor to `index` (0 = before the first entry) and return one
+   * composed patch per touched body carrying it there — inverses when
    * scrubbing back, forward patches when replaying. Null when already there.
    */
-  seekTo(index: number): PaperfoldDocument | null {
-    const steps: PaperfoldDocument[] = [];
+  seekTo(index: number): AppliedStep[] | null {
+    const steps: AppliedStep[] = [];
     const target = Math.max(0, Math.min(index, this.past.length + this.future.length));
     while (this.past.length > target) {
       const entry = this.past.pop()!;
       this.future.push(entry);
-      steps.push(($state.snapshot(entry) as HistoryEntry).inverse);
+      const snapshot = $state.snapshot(entry) as HistoryEntry;
+      for (const step of snapshot.steps.slice().reverse()) {
+        steps.push({ bodyName: step.bodyName, patch: step.inverse });
+      }
     }
     while (this.past.length < target && this.future.length > 0) {
       const entry = this.future.pop()!;
       this.past.push(entry);
-      steps.push(($state.snapshot(entry) as HistoryEntry).patch);
+      const snapshot = $state.snapshot(entry) as HistoryEntry;
+      for (const step of snapshot.steps) {
+        steps.push({ bodyName: step.bodyName, patch: step.patch });
+      }
     }
     if (steps.length === 0) return null;
-    return steps.reduce((composed, step) => composePatches(composed, step));
+
+    // Compose per body, preserving each body's step order — patches for
+    // different bodies are independent.
+    const order: string[] = [];
+    const composed = new Map<string, PaperfoldDocument>();
+    for (const step of steps) {
+      const existing = composed.get(step.bodyName);
+      if (!existing) {
+        order.push(step.bodyName);
+        composed.set(step.bodyName, step.patch);
+      } else {
+        composed.set(step.bodyName, composePatches(existing, step.patch));
+      }
+    }
+    return order.map((bodyName) => ({ bodyName, patch: composed.get(bodyName)! }));
   }
 }

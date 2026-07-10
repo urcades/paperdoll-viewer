@@ -1,4 +1,5 @@
 import { PAPER_DOLL_PROTOCOL, type PaperDollDocument } from "paperdoll";
+import { PAPERCHAIN_PROTOCOL, type Scene } from "paperchain";
 
 export const DEFAULT_NODE_SIZE = 33;
 export const DEFAULT_CONNECTOR_LENGTH = 55;
@@ -941,3 +942,44 @@ export const PAPER_DOLL_PRESETS: readonly PaperDollPreset[] = [
 export const DEFAULT_PRESET = PAPER_DOLL_PRESETS[0];
 export const DEFAULT_DOCUMENT = DEFAULT_PRESET.document;
 export const VESSEL_PRESENTATION = DEFAULT_PRESET.presentation;
+
+// --- Scene presets -----------------------------------------------------------
+// The scene-native app state: each legacy single-body preset becomes a scene
+// of {main, pool} bodies. The old in-body "pool" vessel hack — a free vessel
+// spliced into the figure to host loose items — becomes what it always wanted
+// to be: a separate body in the scene (paperchain's trading-desk pattern).
+
+export type ScenePreset = {
+  id: string;
+  name: string;
+  scene: Scene;
+  presentation: Record<string, Record<string, VesselPresentation>>;
+};
+
+function toScenePreset(preset: PaperDollPreset): ScenePreset {
+  const body = structuredClone(preset.document.body);
+  const poolContents = body.vessels.pool?.contains ?? [];
+  delete body.vessels.pool;
+  const presentation = structuredClone(preset.presentation);
+  delete presentation.pool;
+  return {
+    id: preset.id,
+    name: preset.name,
+    scene: {
+      protocol: PAPERCHAIN_PROTOCOL,
+      bodies: {
+        main: body,
+        pool: { root: "pool", vessels: { pool: { contains: structuredClone(poolContents) } } }
+      },
+      kinds: {},
+      relations: []
+    },
+    presentation: {
+      main: presentation,
+      pool: { pool: { label: "Pool", icon: "P" } }
+    }
+  };
+}
+
+export const SCENE_PRESETS: readonly ScenePreset[] = PAPER_DOLL_PRESETS.map(toScenePreset);
+export const DEFAULT_SCENE_PRESET = SCENE_PRESETS[0];

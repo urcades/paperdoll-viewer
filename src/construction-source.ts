@@ -1,6 +1,13 @@
 import { parseDocument, type PaperDollDocument } from "paperdoll";
+import { parseScene, type Scene } from "paperchain";
 import { type VesselPresentation } from "./sample-document";
 import { type ViewControls } from "./workbench";
+
+export type SceneConstruction = {
+  scene: Scene;
+  presentation: Record<string, Record<string, VesselPresentation>>;
+  view: ViewControls;
+};
 
 export type PaperDollConstruction = {
   document: PaperDollDocument;
@@ -61,6 +68,122 @@ renderPaperDollCanvas({
   view: paperDoll.view,
   layout
 });`;
+}
+
+// --- Scene-literal round-trip ------------------------------------------------
+// The scene-native editor source. Same Function() eval + string/comment-aware
+// brace scanning as the legacy paperDoll literal, but the document is a
+// paperchain scene validated with parseScene.
+
+export function parseSceneSource(source: string): SceneConstruction {
+  const objectSource = extractNamedObjectLiteral(source, "paperScene", "renderPaperScene");
+  const value = Function(`"use strict"; return (${objectSource});`)() as Partial<SceneConstruction>;
+  if (!value.scene || !value.presentation || !value.view) {
+    throw new Error("paperScene must include scene, presentation, and view");
+  }
+
+  const parsedScene = parseScene(value.scene);
+  if (!parsedScene.ok) {
+    throw new Error(parsedScene.errors.map((error) => `${error.path} ${error.message}`).join("\n"));
+  }
+
+  return {
+    scene: parsedScene.value,
+    presentation: value.presentation,
+    view: coerceViewControls(value.view)
+  };
+}
+
+export function formatSceneSource(
+  scene: Scene,
+  presentation: Record<string, Record<string, VesselPresentation>>,
+  controls: ViewControls
+): string {
+  return `import { deriveLayout } from "paperdoll";
+
+const paperScene = ${formatObject({ scene, presentation, view: controls })};
+
+renderPaperScene({
+  scene: paperScene.scene,
+  presentation: paperScene.presentation,
+  view: paperScene.view
+});`;
+}
+
+/**
+ * Node ranges for editor↔canvas selection sync over a scene literal: one
+ * range per vessel of each body, keyed "<bodyName>/<vesselId>". Bodies are
+ * located as members of the scene's `bodies` object.
+ */
+export function getSceneNodeRanges(source: string): ConstructionNodeRange[] {
+  const bodiesStart = findNamedObjectStart(source, "bodies");
+  if (bodiesStart === -1) return [];
+  let bodiesEnd: number;
+  try {
+    bodiesEnd = findBalancedObjectEnd(source, bodiesStart);
+  } catch {
+    return [];
+  }
+
+  const ranges: ConstructionNodeRange[] = [];
+  let index = bodiesStart + 1;
+  while (index < bodiesEnd) {
+    const bodyMember = findNextObjectMember(source, index, bodiesEnd);
+    if (!bodyMember) break;
+    const vesselsStart = findNamedObjectStartFrom(source, "vessels", bodyMember.from, bodyMember.to);
+    if (vesselsStart !== -1) {
+      try {
+        const vesselsEnd = findBalancedObjectEnd(source, vesselsStart);
+        let vesselIndex = vesselsStart + 1;
+        while (vesselIndex < vesselsEnd) {
+          const vessel = findNextObjectMember(source, vesselIndex, vesselsEnd);
+          if (!vessel) break;
+          ranges.push({
+            id: `${bodyMember.id}/${vessel.id}`,
+            from: vessel.from,
+            to: vessel.to,
+            section: "document"
+          });
+          vesselIndex = vessel.to + 1;
+        }
+      } catch {
+        // fall through to the next body
+      }
+    }
+    index = bodyMember.to + 1;
+  }
+
+  return ranges;
+}
+
+function findNamedObjectStartFrom(source: string, objectName: string, from: number, to: number): number {
+  const namePattern = new RegExp(`${escapeRegExp(objectName)}\\s*:\\s*\\{`, "g");
+  namePattern.lastIndex = from;
+  const match = namePattern.exec(source);
+  if (!match || match.index >= to) return -1;
+  return source.indexOf("{", match.index);
+}
+
+function extractNamedObjectLiteral(source: string, name: string, renderCallName: string): string {
+  const declaration = source.match(new RegExp(`const\\s+${escapeRegExp(name)}\\s*=`));
+  if (!declaration) {
+    throw new Error(`Expected \`const ${name} = { ... }; ${renderCallName}(${name});\``);
+  }
+
+  const objectStart = source.indexOf("{", declaration.index! + declaration[0].length);
+  if (objectStart === -1) {
+    throw new SyntaxError(`Expected ${name} object literal`);
+  }
+
+  const objectEnd = findBalancedObjectEnd(source, objectStart);
+  const renderCall = source
+    .slice(objectEnd + 1)
+    .match(new RegExp(`^\\s*;\\s*const\\s+layout\\s*=|^\\s*;\\s*${escapeRegExp(renderCallName)}\\s*\\(`));
+  if (!renderCall) {
+    throw new Error(`Expected \`const ${name} = { ... }; ${renderCallName}(${name});\``);
+  }
+
+  return source.slice(objectStart, objectEnd + 1);
 }
 
 function getObjectMemberRanges(

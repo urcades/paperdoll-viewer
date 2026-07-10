@@ -29,15 +29,16 @@ describe("papermold profiles", () => {
     }
   });
 
-  it("judges the healthy combatant as living and armored", () => {
+  it("judges the healthy combatant as living, and armored only once armor is worn", () => {
     const body = presetBody("combatant");
 
     expect(conforms(body, APP_PROFILES, "living-combatant")).toBe(true);
-    expect(conforms(body, APP_PROFILES, "armored")).toBe(true);
-    expect(judgeAll(body, PRESET_PROFILES.combatant)).toEqual([
-      { profileId: "living-combatant", conforms: true, errors: [] },
-      { profileId: "armored", conforms: true, errors: [] }
-    ]);
+    // Pristine combatant is bare — its armor waits in the scene's pool body.
+    expect(conforms(body, APP_PROFILES, "armored")).toBe(false);
+    expect(judgeAll(body, PRESET_PROFILES.combatant).map((verdict) => verdict.conforms)).toEqual([true, false]);
+
+    const equipped = insertElement(body, "torso", { kind: "item", type: "mail", id: "worn-mail" });
+    expect(conforms(equipped, APP_PROFILES, "armored")).toBe(true);
   });
 
   it("judges the powered mech as a powered rig", () => {
@@ -53,8 +54,8 @@ describe("papermold profiles", () => {
     const errors = judge(dead, APP_PROFILES, "living-combatant");
     expect(errors.length).toBe(1);
     expect(errors[0].path).toBe("$.profiles.living-combatant.vessels.torso.forbids.0");
-    // conformance is opt-in per profile: the corpse still counts as armored
-    expect(conforms(dead, APP_PROFILES, "armored")).toBe(true);
+    // conformance is opt-in per profile: death does not affect the armored judgment
+    expect(conforms(insertElement(dead, "torso", { kind: "item", type: "mail", id: "worn-mail" }), APP_PROFILES, "armored")).toBe(true);
   });
 
   it("cannot see data: zeroed blood and integrity alone do not flip conformance", () => {

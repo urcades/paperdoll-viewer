@@ -24,25 +24,30 @@ function assertOk<T>(result: { ok: true; value: T } | { ok: false; errors: unkno
   return result.value;
 }
 
-/** The funnel sequence from App.svelte, minus Svelte state. */
+/** The funnel sequence from App.svelte, minus Svelte state (one body, "main"). */
 function commitThrough(history: History, prevRoot: Body, address: string, nextBody: Body, label: string): Body {
   const nextRoot = replaceBodyAtAddress(prevRoot, address, nextBody);
   const patch = assertOk(diffBodies(prevRoot, nextRoot));
   const applied = assertOk(applyPatch(prevRoot, patch));
-  history.push({ patch, inverse: invertPatch(patch), label, tag: "construct", runId: null });
+  history.push({
+    steps: [{ bodyName: "main", patch, inverse: invertPatch(patch) }],
+    label,
+    tag: "construct",
+    runId: null
+  });
   return applied;
 }
 
 function undoOnto(history: History, body: Body): Body {
-  const entry = history.undo();
-  if (!entry) throw new Error("nothing to undo");
-  return assertOk(applyPatch(body, entry.inverse));
+  const result = history.undo();
+  if (!result) throw new Error("nothing to undo");
+  return result.steps.reduce((current, step) => assertOk(applyPatch(current, step.patch)), body);
 }
 
 function redoOnto(history: History, body: Body): Body {
-  const entry = history.redo();
-  if (!entry) throw new Error("nothing to redo");
-  return assertOk(applyPatch(body, entry.patch));
+  const result = history.redo();
+  if (!result) throw new Error("nothing to redo");
+  return result.steps.reduce((current, step) => assertOk(applyPatch(current, step.patch)), body);
 }
 
 function clone(body: Body): Body {
@@ -51,7 +56,12 @@ function clone(body: Body): Body {
 
 describe("history store", () => {
   const emptyPatch: PaperfoldDocument = { protocol: "paperfold/v1", patch: [] };
-  const entry = (label: string) => ({ patch: emptyPatch, inverse: emptyPatch, label, tag: "construct" as const, runId: null });
+  const entry = (label: string) => ({
+    steps: [{ bodyName: "main", patch: emptyPatch, inverse: emptyPatch }],
+    label,
+    tag: "construct" as const,
+    runId: null
+  });
 
   it("push clears the redo stack", () => {
     const history = new History();
@@ -195,21 +205,22 @@ describe("patch-based commit funnel", () => {
     }
     const end = current;
 
+    const applySeek = (body: Body, steps: ReturnType<History["seekTo"]>): Body =>
+      steps!.reduce((acc, step) => assertOk(applyPatch(acc, step.patch)), body);
+
     // Scrub to 0 restores the pre-strike body exactly.
     const back = history.seekTo(0);
     expect(back).not.toBeNull();
-    current = assertOk(applyPatch(current, back!));
+    current = applySeek(current, back);
     expect(current).toEqual(base);
     expect(history.cursor).toBe(0);
 
     // Scrub to the middle matches the recorded checkpoint.
-    const mid = history.seekTo(2);
-    current = assertOk(applyPatch(current, mid!));
+    current = applySeek(current, history.seekTo(2));
     expect(current).toEqual(checkpoints[2]);
 
     // Replay to the end reaches the identical final state.
-    const forward = history.seekTo(3);
-    current = assertOk(applyPatch(current, forward!));
+    current = applySeek(current, history.seekTo(3));
     expect(current).toEqual(end);
 
     // Seeking to the current cursor is a no-op.
@@ -222,7 +233,7 @@ describe("patch-based commit funnel", () => {
     let current = commitThrough(history, base, ROOT_ADDRESS, insertVessel(clone(base), {}, { id: "zone-a" }).body, "a");
     current = commitThrough(history, current, ROOT_ADDRESS, insertVessel(clone(current), {}, { id: "zone-b" }).body, "b");
 
-    current = assertOk(applyPatch(current, history.seekTo(1)!));
+    current = history.seekTo(1)!.reduce((acc, step) => assertOk(applyPatch(acc, step.patch)), current);
     expect(history.entries).toHaveLength(2);
 
     commitThrough(history, current, ROOT_ADDRESS, insertVessel(clone(current), {}, { id: "zone-c" }).body, "c");

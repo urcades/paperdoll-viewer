@@ -3,12 +3,11 @@
     deleteVessel,
     disconnect,
     insertElement,
-    insertVessel,
+    isAccepted,
     moveElement,
-    parseDocument,
+    removeElement,
     type Body,
-    type ContainedElement,
-    type PaperDollDocument
+    type ContainedElement
   } from "paperdoll";
   import { DEAD_STATUS, judgeAll, PRESET_PROFILES, type ProfileVerdict } from "./profiles";
   import PaperDollCanvas from "./PaperDollCanvas.svelte";
@@ -19,41 +18,44 @@
   import {
     DEFAULT_CANVAS_PADDING,
     DEFAULT_CONNECTOR_LENGTH,
-    DEFAULT_DOCUMENT,
     DEFAULT_NODE_SIZE,
-    DEFAULT_PRESET,
-    PAPER_DOLL_PRESETS,
-    VESSEL_PRESENTATION,
-    type PaperDollPreset,
+    DEFAULT_SCENE_PRESET,
+    SCENE_PRESETS,
+    type ScenePreset,
     type VesselPresentation
   } from "./sample-document";
-  import {
-    formatConstructionSource,
-    getConstructionNodeRanges,
-    parseConstructionSource
-  } from "./construction-source";
-  import { applyPatch, canonicalizeBody, diffBodies, invertPatch, type PaperfoldDocument } from "paperfold";
-  import { History, type HistoryTag } from "./history.svelte";
+  import { formatSceneSource, getSceneNodeRanges, parseSceneSource } from "./construction-source";
+  import { applyPatch, canonicalizeBody, diffBodies, invertPatch } from "paperfold";
+  import { History, type AppliedStep, type HistoryTag } from "./history.svelte";
   import { assertApplied, snapshotBody } from "./protocol.svelte";
   import { advanceTick, applyStrike, bleedRate, deriveCondition, hasCombatLayers, healAll, WEAPONS } from "./combat";
   import { derivePowerStatus, hasPower, propagatePower } from "./power";
   import {
     canDisconnect,
     describeElement,
-    getBodyAtAddress,
     joinAddress,
     legalDropVessels,
     replaceBodyAtAddress,
-    ROOT_ADDRESS,
     type SelectionTarget,
     type ViewControls
   } from "./workbench";
+  import {
+    getBodyAtSceneAddress,
+    MAIN_BODY,
+    POOL_BODY,
+    replaceBodyInScene,
+    splitSceneAddress,
+    validateScene,
+    type Scene
+  } from "./scene";
 
   type Pan = {
     x: number;
     y: number;
   };
 
+  // Selection and window surfaces use scene addresses: "main", "pool",
+  // "main/back/nested-backpack".
   type Selection = {
     address: string;
     target: SelectionTarget;
@@ -79,6 +81,8 @@
     vessel: string;
     index: number;
     element: ContainedElement;
+    // Vessels legal on the drop surface: the same body for in-body drags,
+    // the main body for drags that start in the pool.
     targets: Set<string>;
     active: boolean;
     originX: number;
@@ -93,14 +97,16 @@
     padding: DEFAULT_CANVAS_PADDING
   };
 
-  let document: PaperDollDocument = $state(structuredClone(DEFAULT_DOCUMENT));
-  let presentation: Record<string, VesselPresentation> = $state(structuredClone(VESSEL_PRESENTATION));
+  let scene: Scene = $state(structuredClone(DEFAULT_SCENE_PRESET.scene));
+  let presentation: Record<string, Record<string, VesselPresentation>> = $state(
+    structuredClone(DEFAULT_SCENE_PRESET.presentation)
+  );
   let selection = $state<Selection | null>({
-    address: ROOT_ADDRESS,
-    target: { kind: "vessel", id: DEFAULT_DOCUMENT.body.root }
+    address: MAIN_BODY,
+    target: { kind: "vessel", id: DEFAULT_SCENE_PRESET.scene.bodies.main.root }
   });
-  let selectedPresetId = $state(DEFAULT_PRESET.id);
-  let status = $state(`Selected ${DEFAULT_DOCUMENT.body.root}`);
+  let selectedPresetId = $state(DEFAULT_SCENE_PRESET.id);
+  let status = $state(`Selected ${DEFAULT_SCENE_PRESET.scene.bodies.main.root}`);
   let sourceStatus: string | null = $state(null);
   let pan: Pan = $state({ x: 0, y: 0 });
   let viewControls: ViewControls = $state(structuredClone(INITIAL_VIEW_CONTROLS));
@@ -110,8 +116,11 @@
   let rejectFlash = $state<{ address: string; vessel: string } | null>(null);
   let rejectTimer: ReturnType<typeof setTimeout> | undefined;
 
+  let mainBody: Body = $derived(scene.bodies[MAIN_BODY]);
+  let mainPresentation = $derived(presentation[MAIN_BODY] ?? {});
+
   let windowSurfaceBody: Body | null = $derived(
-    vesselWindow ? getBodyAtAddress(document.body, vesselWindow.surface) : null
+    vesselWindow ? getBodyAtSceneAddress(scene, vesselWindow.surface) : null
   );
   let windowVessel = $derived(
     vesselWindow && windowSurfaceBody ? (windowSurfaceBody.vessels[vesselWindow.vessel] ?? null) : null
@@ -122,36 +131,34 @@
       : null
   );
   let windowBody: Body | null = $derived(
-    windowCanvasAddress !== null ? getBodyAtAddress(document.body, windowCanvasAddress) : null
+    windowCanvasAddress !== null ? getBodyAtSceneAddress(scene, windowCanvasAddress) : null
   );
   let windowDrawerVessel = $derived(
     vesselWindow?.drawerVessel && windowBody ? (windowBody.vessels[vesselWindow.drawerVessel] ?? null) : null
   );
   let windowTitle = $derived(getWindowTitle(vesselWindow));
   let rootSelection: SelectionTarget | null = $derived(
-    selection && selection.address === ROOT_ADDRESS ? selection.target : null
+    selection && selection.address === MAIN_BODY ? selection.target : null
   );
   let windowSelection: SelectionTarget | null = $derived(
     selection && selection.address === windowCanvasAddress ? selection.target : null
   );
-  let selectedRootVesselId = $derived(rootSelection?.kind === "vessel" ? rootSelection.id : document.body.root);
+  let selectedRootVesselId = $derived(rootSelection?.kind === "vessel" ? rootSelection.id : mainBody.root);
   let canDelete = $derived(computeCanDelete(selection));
   let constructionSource = $state(
-    formatConstructionSource(DEFAULT_DOCUMENT, VESSEL_PRESENTATION, INITIAL_VIEW_CONTROLS)
+    formatSceneSource(DEFAULT_SCENE_PRESET.scene, DEFAULT_SCENE_PRESET.presentation, INITIAL_VIEW_CONTROLS)
   );
-  let nodeRanges = $derived(getConstructionNodeRanges(constructionSource));
-  let poolElements = $derived(document.body.vessels.pool?.contains ?? []);
+  let nodeRanges = $derived(getSceneNodeRanges(constructionSource));
+  let poolElements = $derived(scene.bodies[POOL_BODY]?.vessels[POOL_BODY]?.contains ?? []);
   let weaponId = $state(WEAPONS[1].id);
-  let combatVessels = $derived(
-    Object.keys(document.body.vessels).filter((id) => hasCombatLayers(document.body, id))
-  );
+  let combatVessels = $derived(Object.keys(mainBody.vessels).filter((id) => hasCombatLayers(mainBody, id)));
   let canStrike = $derived(combatVessels.length > 0);
-  let condition = $derived(deriveCondition(document.body));
+  let condition = $derived(deriveCondition(mainBody));
   let profileVerdicts: ProfileVerdict[] = $derived.by(() => {
     const profileIds = PRESET_PROFILES[selectedPresetId] ?? [];
     if (profileIds.length === 0) return [];
     try {
-      return judgeAll(snapshotBody(document.body), profileIds);
+      return judgeAll(snapshotBody(mainBody), profileIds);
     } catch {
       return [];
     }
@@ -159,16 +166,16 @@
   let bleeding = $state(false);
   let bleedTimer: ReturnType<typeof setInterval> | undefined;
   const history = new History();
-  let canRun = $derived(hasPower(document.body));
+  let canRun = $derived(hasPower(mainBody));
   let running = $state(false);
   let powerTimer: ReturnType<typeof setInterval> | undefined;
 
   let simRunId = $state(0);
 
   function pulsePower(): void {
-    const result = propagatePower($state.snapshot(document.body) as Body);
+    const result = propagatePower(snapshotBody(mainBody));
     const status = derivePowerStatus(result.body).join(" · ");
-    commitBodyAt(ROOT_ADDRESS, result.body, { status: status || "no power network", tag: "sim", runId: simRunId });
+    commitBodyAt(MAIN_BODY, result.body, { status: status || "no power network", tag: "sim", runId: simRunId });
   }
 
   function toggleRun(): void {
@@ -219,15 +226,15 @@
   }
 
   function tickBleed(): void {
-    const result = advanceTick($state.snapshot(document.body) as Body);
+    const result = advanceTick(snapshotBody(mainBody));
     if (!result.changed) {
       stopBleed();
       return;
     }
     const conditions = deriveCondition(result.body);
     result.body = reifyDeath(result.body, conditions);
-    commitBodyAt(ROOT_ADDRESS, result.body, {
-      status: `Bleeding (−${bleedRate(document.body)}/s)${conditions.length > 0 ? ` — ${conditions.join(", ")}` : ""}`,
+    commitBodyAt(MAIN_BODY, result.body, {
+      status: `Bleeding (−${bleedRate(mainBody)}/s)${conditions.length > 0 ? ` — ${conditions.join(", ")}` : ""}`,
       tag: "sim",
       runId: simRunId
     });
@@ -236,9 +243,11 @@
 
   $effect(() => () => clearInterval(bleedTimer));
   let rootDropTargets = $derived(
-    elementDrag?.active && elementDrag.address === ROOT_ADDRESS ? elementDrag.targets : null
+    elementDrag?.active && (elementDrag.address === MAIN_BODY || elementDrag.address === POOL_BODY)
+      ? elementDrag.targets
+      : null
   );
-  let rootRejectVesselId = $derived(rejectFlash?.address === ROOT_ADDRESS ? rejectFlash.vessel : null);
+  let rootRejectVesselId = $derived(rejectFlash?.address === MAIN_BODY ? rejectFlash.vessel : null);
   let windowDropTargets = $derived(
     elementDrag?.active && windowCanvasAddress !== null && elementDrag.address === windowCanvasAddress
       ? elementDrag.targets
@@ -252,9 +261,14 @@
 
   function beginElementDrag(event: PointerEvent, address: string, vesselId: string, index: number): void {
     if (event.button !== 0) return;
-    const body = getBodyAtAddress(document.body, address);
+    const body = getBodyAtSceneAddress(scene, address);
     const element = body?.vessels[vesselId]?.contains?.[index];
     if (!body || !element) return;
+
+    // A drag from the pool targets the main figure; everything else targets
+    // vessels of its own body.
+    const surfaceBody = address === POOL_BODY ? mainBody : body;
+    const sourceVessel = address === POOL_BODY ? "" : vesselId;
 
     event.preventDefault();
     elementDrag = {
@@ -263,7 +277,7 @@
       vessel: vesselId,
       index,
       element,
-      targets: new Set(legalDropVessels(body, element, vesselId)),
+      targets: new Set(legalDropVessels(surfaceBody, element, sourceVessel)),
       active: false,
       originX: event.clientX,
       originY: event.clientY,
@@ -288,59 +302,121 @@
     if (!drag.active) return;
 
     const dropped = window.document.elementFromPoint(event.clientX, event.clientY);
-    const targetVessel = resolveDropVessel(drag, dropped);
-    if (!targetVessel || targetVessel === drag.vessel) return;
+    const target = resolveDropTarget(drag, dropped);
+    if (!target) return;
+    if (target.address === drag.address && target.vessel === drag.vessel) return;
 
-    const body = getBodyAtAddress(document.body, drag.address);
-    if (!body) return;
+    const targetBody = getBodyAtSceneAddress(scene, target.address);
+    if (!targetBody) return;
 
-    if (!drag.targets.has(targetVessel)) {
-      const accepts = body.vessels[targetVessel]?.accepts;
-      const acceptsLabel = accepts === undefined
-        ? "anything"
-        : accepts.length === 0
-          ? "nothing (sealed)"
-          : accepts.map((token) => (token.type ? `${token.kind}/${token.type}` : token.kind)).join(", ");
-      status = `${targetVessel} does not accept ${drag.element.type ? `${drag.element.kind}/${drag.element.type}` : drag.element.kind} — accepts ${acceptsLabel}`;
-      rejectFlash = { address: drag.address, vessel: targetVessel };
+    const targetVesselShape = targetBody.vessels[target.vessel];
+    // isAccepted only reads token fields, so the (possibly proxied) element is safe as-is.
+    if (!targetVesselShape || !isAccepted(targetVesselShape, drag.element)) {
+      const accepts = targetVesselShape?.accepts;
+      const acceptsLabel =
+        accepts === undefined
+          ? "anything"
+          : accepts.length === 0
+            ? "nothing (sealed)"
+            : accepts.map((token) => (token.type ? `${token.kind}/${token.type}` : token.kind)).join(", ");
+      status = `${target.vessel} does not accept ${drag.element.type ? `${drag.element.kind}/${drag.element.type}` : drag.element.kind} — accepts ${acceptsLabel}`;
+      rejectFlash = { address: target.address, vessel: target.vessel };
       clearTimeout(rejectTimer);
       rejectTimer = setTimeout(() => (rejectFlash = null), 450);
       return;
     }
 
     try {
-      const nextBody = moveElement(body, drag.vessel, drag.index, targetVessel);
-      commitBodyAt(drag.address, nextBody, {
-        select: { kind: "vessel", id: targetVessel },
-        status: `Moved ${describeElement(drag.element)} to ${targetVessel}`
-      });
+      if (target.address === drag.address) {
+        const body = getBodyAtSceneAddress(scene, drag.address);
+        if (!body) return;
+        const nextBody = moveElement(body, drag.vessel, drag.index, target.vessel);
+        commitBodyAt(drag.address, nextBody, {
+          select: { kind: "vessel", id: target.vessel },
+          status: `Moved ${describeElement(drag.element)} to ${target.vessel}`
+        });
+        return;
+      }
+      // Cross-body transfer (pool ↔ figure): one history entry, two patches.
+      transferElement(drag, target);
     } catch (error) {
       setErrorStatus(error);
     }
   }
 
-  // Same-surface rule: a drag that started in a body may only drop on vessels
-  // of that same body — moveElement never crosses body boundaries.
-  function resolveDropVessel(drag: ElementDrag, dropped: Element | null): string | null {
+  /**
+   * Where did the drop land? In-body drags resolve to their own surface;
+   * top-level drags may cross between the main figure and the pool body —
+   * scene-level transfers that moveElement alone can't express.
+   */
+  function resolveDropTarget(
+    drag: ElementDrag,
+    dropped: Element | null
+  ): { address: string; vessel: string } | null {
     if (!dropped) return null;
     if (dropped.closest(".pool-panel")) {
-      return drag.address === ROOT_ADDRESS ? "pool" : null;
+      return drag.address === MAIN_BODY ? { address: POOL_BODY, vessel: POOL_BODY } : null;
     }
 
     const slot = dropped.closest(".slot");
     if (!slot) return null;
+    const vessel = (slot as HTMLElement).dataset.nodeId ?? null;
+    if (!vessel) return null;
+
     const inWindow = Boolean(dropped.closest(".embedded-body-window"));
-    const sameSurface = inWindow
-      ? windowCanvasAddress !== null && drag.address === windowCanvasAddress
-      : drag.address === ROOT_ADDRESS;
-    return sameSurface ? ((slot as HTMLElement).dataset.nodeId ?? null) : null;
+    if (inWindow) {
+      return windowCanvasAddress !== null && drag.address === windowCanvasAddress
+        ? { address: windowCanvasAddress, vessel }
+        : null;
+    }
+    if (drag.address === MAIN_BODY || drag.address === POOL_BODY) {
+      return { address: MAIN_BODY, vessel };
+    }
+    return null;
+  }
+
+  function transferElement(drag: ElementDrag, target: { address: string; vessel: string }): void {
+    const fromName = splitSceneAddress(drag.address).bodyName;
+    const toName = splitSceneAddress(target.address).bodyName;
+
+    const fromPrev = snapshotBody(scene.bodies[fromName]);
+    const removal = removeElement(fromPrev, drag.vessel, drag.index);
+    const toPrev = snapshotBody(scene.bodies[toName]);
+    const inserted = insertElement(toPrev, target.vessel, removal.element);
+
+    const fromPatch = assertApplied(diffBodies(fromPrev, removal.body));
+    const toPatch = assertApplied(diffBodies(toPrev, inserted));
+    const fromApplied = assertApplied(applyPatch(fromPrev, fromPatch));
+    const toApplied = assertApplied(applyPatch(toPrev, toPatch));
+
+    const label = `Moved ${describeElement(drag.element)} to ${toName === POOL_BODY ? "the pool" : target.vessel}`;
+    history.push({
+      steps: [
+        { bodyName: fromName, patch: fromPatch, inverse: invertPatch(fromPatch) },
+        { bodyName: toName, patch: toPatch, inverse: invertPatch(toPatch) }
+      ],
+      label,
+      tag: "construct",
+      runId: null
+    });
+
+    let nextScene = replaceBodyInScene(snapshotScene(), fromName, fromApplied);
+    nextScene = replaceBodyInScene(nextScene, toName, toApplied);
+    commitScene(
+      nextScene,
+      presentation,
+      viewControls,
+      toName === POOL_BODY ? selection : { address: MAIN_BODY, target: { kind: "vessel", id: target.vessel } },
+      label,
+      true
+    );
   }
 
   function strike(): void {
     try {
-      const body = $state.snapshot(document.body) as Body;
+      const body = snapshotBody(mainBody);
       const selected =
-        selection?.address === ROOT_ADDRESS && selection.target.kind === "vessel" ? selection.target.id : null;
+        selection?.address === MAIN_BODY && selection.target.kind === "vessel" ? selection.target.id : null;
       const targetId =
         selected && hasCombatLayers(body, selected)
           ? selected
@@ -350,7 +426,7 @@
       const result = applyStrike(body, targetId, weapon);
       const conditions = deriveCondition(result.body);
       const nextBody = reifyDeath(result.body, conditions);
-      commitBodyAt(ROOT_ADDRESS, nextBody, {
+      commitBodyAt(MAIN_BODY, nextBody, {
         select: { kind: "vessel", id: targetId },
         status: conditions.length > 0 ? `${result.log} — ${conditions.join(", ")}` : result.log,
         tag: "sim",
@@ -364,7 +440,7 @@
   function healCombatant(): void {
     try {
       stopBleed();
-      commitBodyAt(ROOT_ADDRESS, healAll($state.snapshot(document.body) as Body), {
+      commitBodyAt(MAIN_BODY, healAll(snapshotBody(mainBody)), {
         status: "All wounds healed"
       });
     } catch (error) {
@@ -372,19 +448,16 @@
     }
   }
 
+  // The pool is a real scene body now — nothing to splice in when entering
+  // play mode.
   function setMode(nextMode: "construct" | "play"): void {
     mode = nextMode;
-    if (nextMode === "play" && !document.body.vessels.pool) {
-      const result = insertVessel($state.snapshot(document.body) as Body, {}, { id: "pool" });
-      commitBodyAt(ROOT_ADDRESS, result.body, { status: "Entered play mode with an empty pool" });
-      return;
-    }
     status = nextMode === "play" ? "Play mode: drag items between pool and vessels" : "Construct mode";
   }
 
   function computeCanDelete(current: Selection | null): boolean {
     if (!current) return false;
-    const body = getBodyAtAddress(document.body, current.address);
+    const body = getBodyAtSceneAddress(scene, current.address);
     if (!body) return false;
     if (current.target.kind === "vessel") {
       return current.target.id !== body.root && Boolean(body.vessels[current.target.id]);
@@ -400,7 +473,7 @@
     }
 
     const label = `${target.from.vessel} ↔ ${target.to.vessel}`;
-    const body = getBodyAtAddress(document.body, address);
+    const body = getBodyAtSceneAddress(scene, address);
     status =
       body && canDisconnect(body, target.from)
         ? `Selected connection ${label}`
@@ -408,7 +481,7 @@
   }
 
   function openVessel(vesselId: string): void {
-    vesselWindow = { surface: ROOT_ADDRESS, vessel: vesselId, bodyElementId: null, drawerVessel: null };
+    vesselWindow = { surface: MAIN_BODY, vessel: vesselId, bodyElementId: null, drawerVessel: null };
   }
 
   // Addresses are element-id based (law 8), so opening a body requires the
@@ -442,41 +515,46 @@
 
   function getWindowTitle(state: VesselWindowState | null): string {
     if (!state) return "";
+    const { bodyName, address } = splitSceneAddress(state.surface);
     const label =
-      state.surface === ROOT_ADDRESS
-        ? (presentation[state.vessel]?.label?.replace(/\s+/g, " ") ?? state.vessel)
+      address === ""
+        ? (presentation[bodyName]?.[state.vessel]?.label?.replace(/\s+/g, " ") ?? state.vessel)
         : state.vessel;
     return state.bodyElementId === null ? label : `${label}: ${state.bodyElementId}`;
   }
 
-  // The commit funnel. Callers hand over a candidate next body (possibly for
-  // a nested drawer address); the funnel lifts it to the root, diffs against
-  // the current root, and commits paperfold's canonical applied body. Every
-  // mutation therefore lands as a recorded, invertible patch.
-  function commitBodyAt(address: string, nextBody: Body, meta: MutationMeta): void {
+  function snapshotScene(): Scene {
+    return $state.snapshot(scene) as Scene;
+  }
+
+  // The commit funnel. Callers hand over a candidate next body for a scene
+  // address; the funnel lifts nested edits to that body's root, diffs, and
+  // commits paperfold's canonical applied body back into the scene. Every
+  // mutation lands as a recorded, invertible patch tagged with its body.
+  function commitBodyAt(sceneAddress: string, nextBody: Body, meta: MutationMeta): void {
     try {
-      const prevRoot = snapshotBody(document.body);
-      const nextRoot = replaceBodyAtAddress(prevRoot, address, snapshotBody(nextBody));
-      const patch = assertApplied(diffBodies(prevRoot, nextRoot));
+      const { bodyName, address } = splitSceneAddress(sceneAddress);
+      const prevBody = snapshotBody(scene.bodies[bodyName]);
+      const nextRoot = replaceBodyAtAddress(prevBody, address, snapshotBody(nextBody));
+      const patch = assertApplied(diffBodies(prevBody, nextRoot));
       if (patch.patch.length === 0) {
         // No-op commit (e.g. a power pulse with nothing left to drain): update
         // the status line without polluting history.
         status = meta.status;
         return;
       }
-      const applied = assertApplied(applyPatch(prevRoot, patch));
+      const applied = assertApplied(applyPatch(prevBody, patch));
       history.push({
-        patch,
-        inverse: invertPatch(patch),
+        steps: [{ bodyName, patch, inverse: invertPatch(patch) }],
         label: meta.status,
         tag: meta.tag ?? "construct",
         runId: meta.runId ?? null
       });
-      commitConstruction(
-        { ...document, body: applied },
+      commitScene(
+        replaceBodyInScene(snapshotScene(), bodyName, applied),
         presentation,
         viewControls,
-        meta.select ? { address, target: meta.select } : selection,
+        meta.select ? { address: sceneAddress, target: meta.select } : selection,
         meta.status,
         true
       );
@@ -488,31 +566,24 @@
   // Undo/redo re-apply recorded patches without pushing new entries. Timers
   // stop first so a sim run can't race a rewind.
   function undo(): void {
-    applyHistoryStep(history.undo(), "inverse", "Undid");
+    applySteps(history.undo(), "Undid");
   }
 
   function redo(): void {
-    applyHistoryStep(history.redo(), "patch", "Redid");
+    applySteps(history.redo(), "Redid");
   }
 
-  function applyHistoryStep(
-    entry: { patch: PaperfoldDocument; inverse: PaperfoldDocument; label: string } | null,
-    direction: "patch" | "inverse",
-    verb: string
-  ): void {
-    if (!entry) return;
+  function applySteps(result: { label: string; steps: AppliedStep[] } | null, verb: string): void {
+    if (!result) return;
     try {
       stopBleed();
       stopRun();
-      const applied = assertApplied(applyPatch(snapshotBody(document.body), entry[direction]));
-      commitConstruction(
-        { ...document, body: applied },
-        presentation,
-        viewControls,
-        selection,
-        `${verb}: ${entry.label}`,
-        true
-      );
+      let nextScene = snapshotScene();
+      for (const step of result.steps) {
+        const applied = assertApplied(applyPatch(nextScene.bodies[step.bodyName], step.patch));
+        nextScene = replaceBodyInScene(nextScene, step.bodyName, applied);
+      }
+      commitScene(nextScene, presentation, viewControls, selection, `${verb}: ${result.label}`, true);
     } catch (error) {
       setErrorStatus(error);
     }
@@ -522,11 +593,15 @@
     try {
       stopBleed();
       stopRun();
-      const step = history.seekTo(index);
-      if (!step) return;
-      const applied = assertApplied(applyPatch(snapshotBody(document.body), step));
-      commitConstruction(
-        { ...document, body: applied },
+      const steps = history.seekTo(index);
+      if (!steps) return;
+      let nextScene = snapshotScene();
+      for (const step of steps) {
+        const applied = assertApplied(applyPatch(nextScene.bodies[step.bodyName], step.patch));
+        nextScene = replaceBodyInScene(nextScene, step.bodyName, applied);
+      }
+      commitScene(
+        nextScene,
         presentation,
         viewControls,
         selection,
@@ -551,7 +626,7 @@
   function deleteSelected(): void {
     try {
       if (!selection) return;
-      const body = getBodyAtAddress(document.body, selection.address);
+      const body = getBodyAtSceneAddress(scene, selection.address);
       if (!body) return;
 
       if (selection.target.kind === "connection") {
@@ -582,7 +657,7 @@
   }
 
   function handlePresetChange(presetId: string): void {
-    const preset = PAPER_DOLL_PRESETS.find((candidate) => candidate.id === presetId);
+    const preset = SCENE_PRESETS.find((candidate) => candidate.id === presetId);
     if (!preset) return;
 
     selectedPresetId = preset.id;
@@ -591,33 +666,33 @@
     stopBleed();
     stopRun();
     history.clear();
-    commitConstruction(
-      structuredClone(preset.document),
+    commitScene(
+      structuredClone(preset.scene),
       structuredClone(preset.presentation),
       structuredClone(INITIAL_VIEW_CONTROLS),
-      { address: ROOT_ADDRESS, target: { kind: "vessel", id: preset.document.body.root } },
+      { address: MAIN_BODY, target: { kind: "vessel", id: preset.scene.bodies.main.root } },
       `Selected ${preset.name}`,
       true
     );
   }
 
   function handleViewControlsChange(nextControls: ViewControls): void {
-    commitConstruction(document, presentation, nextControls, selection, status, true);
+    commitScene(snapshotScene(), presentation, nextControls, selection, status, true);
   }
 
   function handleConstructionSourceChange(nextSource: string): void {
     constructionSource = nextSource;
     try {
-      const construction = parseConstructionSource(nextSource);
-      commitConstruction(
-        construction.document,
+      const construction = parseSceneSource(nextSource);
+      commitScene(
+        construction.scene,
         construction.presentation,
         construction.view,
         selection,
-        `Rendered ${Object.keys(construction.document.body.vessels).length} vessels`,
+        `Rendered ${Object.keys(construction.scene.bodies).length} bodies`,
         false
       );
-      selectedPresetId = getMatchingPresetId(construction.document, construction.presentation) ?? "custom";
+      selectedPresetId = getMatchingPresetId(construction.scene, construction.presentation) ?? "custom";
       sourceStatus = null;
       history.clear();
     } catch (error) {
@@ -625,25 +700,25 @@
     }
   }
 
-  function commitConstruction(
-    nextDocument: PaperDollDocument,
-    nextPresentation: Record<string, VesselPresentation>,
+  function commitScene(
+    nextScene: Scene,
+    nextPresentation: Record<string, Record<string, VesselPresentation>>,
     nextViewControls: ViewControls,
     nextSelection: Selection | null,
     nextStatus: string,
     rewriteSource: boolean
   ): void {
-    const parsedDocument = parseDocument(nextDocument);
-    if (!parsedDocument.ok) {
-      status = parsedDocument.errors.map((error) => error.message).join("\n");
+    const errors = validateScene(nextScene);
+    if (errors.length > 0) {
+      status = errors.map((error) => `${error.path} ${error.message}`).join("\n");
       return;
     }
 
-    document = parsedDocument.value;
+    scene = nextScene;
     presentation = nextPresentation;
     viewControls = nextViewControls;
     if (vesselWindow) {
-      const surface = getBodyAtAddress(document.body, vesselWindow.surface);
+      const surface = getBodyAtSceneAddress(scene, vesselWindow.surface);
       const vessel = surface?.vessels[vesselWindow.vessel];
       if (!vessel) {
         vesselWindow = null;
@@ -657,16 +732,19 @@
     selection = reconcileSelection(nextSelection);
     status = nextStatus;
     if (rewriteSource) {
-      constructionSource = formatConstructionSource(document, presentation, viewControls);
+      constructionSource = formatSceneSource(snapshotScene(), presentation, viewControls);
       sourceStatus = null;
     }
   }
 
   function reconcileSelection(candidate: Selection | null): Selection {
-    const rootFallback: Selection = { address: ROOT_ADDRESS, target: { kind: "vessel", id: document.body.root } };
+    const rootFallback: Selection = {
+      address: MAIN_BODY,
+      target: { kind: "vessel", id: scene.bodies[MAIN_BODY].root }
+    };
     if (!candidate) return rootFallback;
 
-    const body = getBodyAtAddress(document.body, candidate.address);
+    const body = getBodyAtSceneAddress(scene, candidate.address);
     if (!body) return rootFallback;
     if (candidate.target.kind === "vessel") {
       return body.vessels[candidate.target.id]
@@ -685,7 +763,7 @@
 
   function formatSourceError(error: unknown): string {
     if (error instanceof SyntaxError) return "Keep editing to redraw";
-    if (error instanceof Error && error.message.startsWith("Expected `const paperDoll")) {
+    if (error instanceof Error && error.message.startsWith("Expected `const paperScene")) {
       return "Keep editing to redraw";
     }
 
@@ -693,32 +771,42 @@
   }
 
   function getMatchingPresetId(
-    nextDocument: PaperDollDocument,
-    nextPresentation: Record<string, VesselPresentation>
+    nextScene: Scene,
+    nextPresentation: Record<string, Record<string, VesselPresentation>>
   ): string | null {
     // Compare canonical bodies — patch commits canonicalize (dropping empty
-    // ports/contains), so naive whole-document equality would never match a
-    // preset again after the first edit+undo.
-    const documentText = JSON.stringify({ ...nextDocument, body: canonicalizeBody(nextDocument.body) });
+    // ports/contains), so naive equality would never match a preset again
+    // after the first edit+undo.
+    const sceneText = JSON.stringify(canonicalizeScene(nextScene));
     const presentationText = JSON.stringify(nextPresentation);
-    const matchingPreset: PaperDollPreset | undefined = PAPER_DOLL_PRESETS.find(
+    const matchingPreset: ScenePreset | undefined = SCENE_PRESETS.find(
       (preset) =>
-        JSON.stringify({ ...preset.document, body: canonicalizeBody(preset.document.body) }) === documentText &&
+        JSON.stringify(canonicalizeScene(preset.scene)) === sceneText &&
         JSON.stringify(preset.presentation) === presentationText
     );
 
     return matchingPreset?.id ?? null;
   }
+
+  function canonicalizeScene(input: Scene): Scene {
+    return {
+      ...input,
+      bodies: Object.fromEntries(
+        Object.entries(input.bodies).map(([name, body]) => [name, canonicalizeBody(body)])
+      )
+    };
+  }
+
+  const presetOptions = SCENE_PRESETS.map((preset) => ({ id: preset.id, name: preset.name }));
 </script>
 
 <svelte:window onkeydown={handleUndoKey} />
 
 <div class="paper-doll-editor">
   <PaperDollCanvas
-    body={document.body}
-    {presentation}
+    body={mainBody}
+    presentation={mainPresentation}
     selection={rootSelection}
-    excludeVessels={["pool"]}
     dropTargets={rootDropTargets}
     rejectVesselId={rootRejectVesselId}
     {status}
@@ -735,16 +823,16 @@
     {bleeding}
     {canRun}
     {running}
-    presets={PAPER_DOLL_PRESETS}
+    presets={presetOptions}
     {selectedPresetId}
     {pan}
     viewControls={viewControls}
     onPresetChange={handlePresetChange}
     onViewControlsChange={handleViewControlsChange}
     onPanChange={(nextPan) => (pan = nextPan)}
-    onSelect={(target) => selectAt(ROOT_ADDRESS, target)}
+    onSelect={(target) => selectAt(MAIN_BODY, target)}
     onOpenVessel={openVessel}
-    onMutate={(nextBody, meta) => commitBodyAt(ROOT_ADDRESS, nextBody, meta)}
+    onMutate={(nextBody, meta) => commitBodyAt(MAIN_BODY, nextBody, meta)}
     onMutationError={setErrorStatus}
     onDeleteSelected={deleteSelected}
     onUndo={undo}
@@ -804,17 +892,20 @@
       onModeChange={setMode}
       source={constructionSource}
       status={sourceStatus}
-      selectedId={selectedRootVesselId}
+      selectedId={`${MAIN_BODY}/${selectedRootVesselId}`}
       nodeRanges={nodeRanges}
       onSourceChange={handleConstructionSourceChange}
-      onSelectNode={(id) => selectAt(ROOT_ADDRESS, { kind: "vessel", id })}
+      onSelectNode={(id) => {
+        const { bodyName, address } = splitSceneAddress(id);
+        selectAt(bodyName, { kind: "vessel", id: address || bodyName });
+      }}
     />
   {:else}
     <PoolPanel
       {mode}
       onModeChange={setMode}
       elements={poolElements}
-      onElementPointerDown={(event, index) => beginElementDrag(event, ROOT_ADDRESS, "pool", index)}
+      onElementPointerDown={(event, index) => beginElementDrag(event, POOL_BODY, POOL_BODY, index)}
       onElementPointerMove={updateElementDrag}
       onElementPointerUp={endElementDrag}
     />

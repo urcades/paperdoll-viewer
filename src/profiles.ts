@@ -50,11 +50,12 @@ export const APP_PROFILES: PapermoldDocument = {
         ]
       }
     },
-    // The combatant's armor lives in the pool vessel until equipped; carrying
-    // any armor item at all counts as armored.
+    // Armored means armor actually worn: an item layered on the torso. The
+    // pristine combatant starts bare (its armor waits in the scene's pool
+    // body), so equipping via drag flips this badge live.
     armored: {
       vessels: {
-        pool: { containsAtLeast: [{ kind: "item" }] }
+        torso: { containsAtLeast: [{ kind: "item" }] }
       }
     },
     // The powered-mech preset: the core vessel carries at least one power cell

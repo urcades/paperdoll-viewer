@@ -4,8 +4,10 @@
   import type { Snippet } from "svelte";
   import BodyCanvas from "./BodyCanvas.svelte";
   import { type SelectionTarget, type ViewControls } from "./workbench";
-  import type { PaperDollPreset, VesselPresentation } from "./sample-document";
+  import type { VesselPresentation } from "./sample-document";
   import type { ProfileVerdict } from "./profiles";
+
+  type PresetOption = { id: string; name: string };
 
   type Pan = {
     x: number;
@@ -35,7 +37,7 @@
     bleeding: boolean;
     canRun: boolean;
     running: boolean;
-    presets: readonly PaperDollPreset[];
+    presets: readonly PresetOption[];
     selectedPresetId: string;
     pan: Pan;
     viewControls: ViewControls;

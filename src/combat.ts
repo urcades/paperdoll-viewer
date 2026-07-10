@@ -288,8 +288,8 @@ export function bleedRate(body: Body): number {
   let rate = 0;
   for (const [vesselId, vessel] of Object.entries(body.vessels)) {
     if (!reachable.has(vesselId)) {
-      // a severed stump pours blood from its exposed tissue; an unreachable
-      // item stash (the pool) is not a wound
+      // a severed stump pours blood from its exposed tissue; a free vessel
+      // holding only items is not a wound
       if (vessel.contains?.some((element) => element.kind !== "item" && getCombatData(element))) rate += 3;
       continue;
     }
