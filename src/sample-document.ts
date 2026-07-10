@@ -437,6 +437,120 @@ const SATELLITE_PRESENTATION: Record<string, VesselPresentation> = {
   probe: { label: "Probe", icon: "E" }
 };
 
+// A hand as a paper doll: the palm is the root, the four finger bases form a
+// horizontal knuckle row, tips stack above, the thumb hangs off the palm's
+// side. Every segment accepts item/ring, and `contains` being a list means a
+// single knuckle can stack several rings.
+const ring = (id: string) => item("ring", id);
+
+const HAND_DOCUMENT: PaperDollDocument = {
+  protocol: PAPER_DOLL_PROTOCOL,
+  body: {
+    root: "palm",
+    vessels: {
+      pool: {
+        contains: [
+          ring("ruby-ring"),
+          ring("opal-ring"),
+          ring("iron-band"),
+          ring("brass-ring"),
+          ring("cursed-ring"),
+          item("glove", "silk-glove"),
+          item("bracelet", "copper-bangle")
+        ]
+      },
+      palm: {
+        accepts: accepts("glove"),
+        ports: {
+          top: { vessel: "middle-base", side: "bottom" },
+          left: { vessel: "thumb-base", side: "right" },
+          bottom: { vessel: "wrist", side: "top" }
+        }
+      },
+      wrist: {
+        accepts: accepts("bracelet"),
+        ports: { top: { vessel: "palm", side: "bottom" } }
+      },
+      "thumb-base": {
+        accepts: accepts("ring"),
+        ports: {
+          right: { vessel: "palm", side: "left" },
+          left: { vessel: "thumb-tip", side: "right" }
+        }
+      },
+      "thumb-tip": {
+        accepts: accepts("ring"),
+        ports: { right: { vessel: "thumb-base", side: "left" } }
+      },
+      "index-base": {
+        accepts: accepts("ring"),
+        ports: {
+          right: { vessel: "middle-base", side: "left" },
+          top: { vessel: "index-tip", side: "bottom" }
+        }
+      },
+      "index-tip": {
+        accepts: accepts("ring"),
+        ports: { bottom: { vessel: "index-base", side: "top" } }
+      },
+      "middle-base": {
+        accepts: accepts("ring"),
+        contains: [ring("silver-band")],
+        ports: {
+          bottom: { vessel: "palm", side: "top" },
+          left: { vessel: "index-base", side: "right" },
+          right: { vessel: "ring-base", side: "left" },
+          top: { vessel: "middle-tip", side: "bottom" }
+        }
+      },
+      "middle-tip": {
+        accepts: accepts("ring"),
+        ports: { bottom: { vessel: "middle-base", side: "top" } }
+      },
+      "ring-base": {
+        accepts: accepts("ring"),
+        contains: [ring("gold-ring"), ring("engraved-band")],
+        ports: {
+          left: { vessel: "middle-base", side: "right" },
+          right: { vessel: "pinky-base", side: "left" },
+          top: { vessel: "ring-tip", side: "bottom" }
+        }
+      },
+      "ring-tip": {
+        accepts: accepts("ring"),
+        ports: { bottom: { vessel: "ring-base", side: "top" } }
+      },
+      "pinky-base": {
+        accepts: accepts("ring"),
+        ports: {
+          left: { vessel: "ring-base", side: "right" },
+          top: { vessel: "pinky-tip", side: "bottom" }
+        }
+      },
+      "pinky-tip": {
+        accepts: accepts("ring"),
+        contains: [ring("pinky-signet")],
+        ports: { bottom: { vessel: "pinky-base", side: "top" } }
+      }
+    }
+  }
+};
+
+const HAND_PRESENTATION: Record<string, VesselPresentation> = {
+  palm: { label: "Palm", icon: "@" },
+  wrist: { label: "Wrist", icon: "W" },
+  "thumb-base": { label: "Thumb\nBase", icon: "A" },
+  "thumb-tip": { label: "Thumb\nTip", icon: "B" },
+  "index-base": { label: "Index\nBase", icon: "C" },
+  "index-tip": { label: "Index\nTip", icon: "D" },
+  "middle-base": { label: "Middle\nBase", icon: "E" },
+  "middle-tip": { label: "Middle\nTip", icon: "F" },
+  "ring-base": { label: "Ring\nBase", icon: "G" },
+  "ring-tip": { label: "Ring\nTip", icon: "H" },
+  "pinky-base": { label: "Pinky\nBase", icon: "I" },
+  "pinky-tip": { label: "Pinky\nTip", icon: "J" }
+};
+
 export const PAPER_DOLL_PRESETS: readonly PaperDollPreset[] = [
   {
     id: "humanoid",
@@ -461,6 +575,12 @@ export const PAPER_DOLL_PRESETS: readonly PaperDollPreset[] = [
     name: "Satellite",
     document: SATELLITE_DOCUMENT,
     presentation: SATELLITE_PRESENTATION
+  },
+  {
+    id: "hand",
+    name: "Human Hand",
+    document: HAND_DOCUMENT,
+    presentation: HAND_PRESENTATION
   }
 ];
 

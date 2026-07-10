@@ -35,7 +35,7 @@ describe("paperdoll viewer construction flow", () => {
   });
 
   it("ships valid selectable body presets", () => {
-    expect(PAPER_DOLL_PRESETS.map((preset) => preset.id)).toEqual(["humanoid", "mech", "vehicle", "satellite"]);
+    expect(PAPER_DOLL_PRESETS.map((preset) => preset.id)).toEqual(["humanoid", "mech", "vehicle", "satellite", "hand"]);
 
     for (const preset of PAPER_DOLL_PRESETS) {
       const parsed = parseDocument(preset.document);

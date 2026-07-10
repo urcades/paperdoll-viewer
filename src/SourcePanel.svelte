@@ -32,7 +32,10 @@
   let { source, status, selectedId, nodeRanges, onSourceChange, onSelectNode }: Props = $props();
 
   let editorEl: HTMLElement;
-  let view: EditorView | null = null;
+  // $state so the sync effects re-run once the editor mounts; a plain variable
+  // leaves the source-sync effect with zero tracked dependencies on its first
+  // (pre-mount) run, permanently detaching it.
+  let view = $state<EditorView | null>(null);
   let applyingExternalSource = false;
   let lastEmittedSource = "";
   let lastSelectedFromEditor = "";
