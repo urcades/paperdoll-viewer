@@ -16,6 +16,7 @@ import {
   type Endpoint,
   type JsonValue,
   type PaperDollDocument,
+  type Side,
   type Vessel,
   type VesselId
 } from "paperdoll";
@@ -198,6 +199,52 @@ function replaceAtSegments(root: Body, segments: readonly string[], next: Body):
       [vesselId]: { ...container, contains }
     }
   };
+}
+
+export function reachableVessels(body: Body): Set<VesselId> {
+  const seen = new Set<VesselId>([body.root]);
+  const queue = [body.root];
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    for (const port of Object.values(body.vessels[id]?.ports ?? {})) {
+      if (port && !seen.has(port.vessel)) {
+        seen.add(port.vessel);
+        queue.push(port.vessel);
+      }
+    }
+  }
+  return seen;
+}
+
+// Severs everything distal to a vessel: cuts each port whose removal would
+// orphan its neighbor from the root, then strips the ports of every now-
+// unreachable vessel so the detached subtree becomes free vessels. This keeps
+// the document valid by construction (the reachability law forbids a ported
+// vessel unreachable from root), which is why severing is its own operation
+// rather than the manual connector-delete we intentionally block.
+export function severDistalSubtree(body: Body, vesselId: VesselId): { body: Body; severed: VesselId[] } {
+  if (vesselId === body.root) return { body, severed: [] };
+
+  let next = body;
+  for (const [side, port] of Object.entries(body.vessels[vesselId]?.ports ?? {})) {
+    if (!port) continue;
+    const trial = disconnect(next, { vessel: vesselId, side: side as Side }).body;
+    if (!reachableVessels(trial).has(port.vessel)) next = trial;
+  }
+
+  const reachable = reachableVessels(next);
+  const severed: VesselId[] = [];
+  const vessels: Record<VesselId, Vessel> = {};
+  for (const [id, vessel] of Object.entries(next.vessels)) {
+    if (!reachable.has(id) && vessel.ports) {
+      const { ports, ...rest } = vessel;
+      vessels[id] = rest;
+      severed.push(id);
+    } else {
+      vessels[id] = vessel;
+    }
+  }
+  return { body: { ...next, vessels }, severed };
 }
 
 export function canDisconnect(body: Body, endpoint: Endpoint): boolean {

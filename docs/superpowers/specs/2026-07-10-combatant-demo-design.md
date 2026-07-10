@@ -54,6 +54,26 @@ edged), leather absorbs impact.
 - Detail window (existing) already exposes per-layer wound data; play mode
   drag-drop equips armor.
 
+## Severing (added 2026-07-10)
+
+Limbs are segmented into hinges (`upper-arm → lower-arm → hand → fingers` per
+side; legs `thigh → shin → foot`) so cuts can land mid-limb. When a strike
+destroys a part's structural **bone** layer, everything distal to that part is
+severed: `severDistalSubtree(body, vesselId)` (in workbench.ts) cuts each port
+whose removal orphans its neighbor from root, then strips the ports of every
+now-unreachable vessel so the detached subtree becomes **free vessels** on the
+canvas. This is forced by the reachability law — a ported vessel unreachable
+from root is invalid — so a mid-limb cut *must* scatter the whole distal chain
+(hand + fingers drop together). Neck bone destroyed → head detaches as a free
+vessel = decapitation. Edged narrates "severed", blunt "torn off".
+
+Severing is its own operation, distinct from the manual connector-delete we
+deliberately block: it maintains document validity by construction rather than
+being an illegal move. `deriveCondition` treats a vital organ on a severed
+(unreachable) part as death, so a severed head reads "dead (head severed)".
+`heal` restores integrity only; it does not reattach severed parts (reset by
+reselecting the preset) — thematically correct for the gore demo.
+
 ## Out of scope
 
 Skills/dodging, weapon quality/lodging, wrestling stress types, infection,

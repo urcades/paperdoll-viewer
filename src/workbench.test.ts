@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { connect, deleteVessel, deriveLayout, insertElement, insertVessel, parseDocument, type Body } from "paperdoll";
 import { applyStrike, deriveCondition, getCombatData, healAll, WEAPONS } from "./combat";
+import { reachableVessels, severDistalSubtree } from "./workbench";
 import {
   DEFAULT_CANVAS_PADDING,
   DEFAULT_CONNECTOR_LENGTH,
@@ -403,7 +404,66 @@ describe("combat model", () => {
   });
 
   it("documents stay protocol-valid through strikes", () => {
-    const { body } = applyStrike(combatant(), "left-arm", weapon("sword"), midRng);
+    const { body } = applyStrike(combatant(), "left-hand", weapon("sword"), midRng);
     expect(parseDocument({ protocol: "paper-doll/v3", body }).ok).toBe(true);
+  });
+});
+
+describe("severing", () => {
+  const combatant = () => structuredClone(PAPER_DOLL_PRESETS.find((preset) => preset.id === "combatant")!.document.body);
+  const weapon = (id: string) => WEAPONS.find((candidate) => candidate.id === id)!;
+  const highRng = () => 0.95;
+
+  it("severs a leaf part into a free vessel without breaking the document", () => {
+    const before = combatant();
+    const { body, severed } = severDistalSubtree(before, "left-hand");
+
+    // left-hand's distal child (fingers) detaches; hand stays attached to the arm
+    expect(severed).toContain("left-fingers");
+    expect(reachableVessels(body).has("left-fingers")).toBe(false);
+    expect(body.vessels["left-fingers"].ports).toBeUndefined();
+    expect(deriveLayout(body).free).toContain("left-fingers");
+    expect(parseDocument({ protocol: "paper-doll/v3", body }).ok).toBe(true);
+  });
+
+  it("cascades: cutting the upper arm scatters the whole distal chain", () => {
+    const { body, severed } = severDistalSubtree(combatant(), "upper-left-arm");
+
+    expect(new Set(severed)).toEqual(new Set(["lower-left-arm", "left-hand", "left-fingers"]));
+    for (const id of severed) {
+      expect(body.vessels[id].ports).toBeUndefined();
+    }
+    expect(parseDocument({ protocol: "paper-doll/v3", body }).ok).toBe(true);
+  });
+
+  it("decapitates when the neck structure is cut through", () => {
+    let body = combatant();
+    let severed: string[] = [];
+    for (let index = 0; index < 15 && !severed.includes("head"); index += 1) {
+      const result = applyStrike(body, "neck", weapon("sword"), highRng);
+      body = result.body;
+      const after = severDistalSubtree(body, "neck");
+      severed = [...severed, ...after.severed];
+    }
+    // the strike itself severs when the spine breaks; head becomes free
+    const struckToDeath = (() => {
+      let b = combatant();
+      for (let i = 0; i < 15; i += 1) {
+        const r = applyStrike(b, "neck", weapon("sword"), highRng);
+        b = r.body;
+        if (!reachableVessels(b).has("head")) return b;
+      }
+      return b;
+    })();
+    expect(reachableVessels(struckToDeath).has("head")).toBe(false);
+    // a severed head carries the brain out of the body: death
+    expect(deriveCondition(struckToDeath)).toContainEqual(expect.stringContaining("head severed"));
+  });
+
+  it("severing the root is a no-op", () => {
+    const before = combatant();
+    const { body, severed } = severDistalSubtree(before, "torso");
+    expect(severed).toEqual([]);
+    expect(body).toBe(before);
   });
 });

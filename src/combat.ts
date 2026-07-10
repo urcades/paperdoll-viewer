@@ -1,5 +1,5 @@
 import { type Body, type ContainedElement, type VesselId } from "paperdoll";
-import { replaceElementData } from "./workbench";
+import { reachableVessels, replaceElementData, severDistalSubtree } from "./workbench";
 
 // A simplified Dwarf Fortress material/damage model over paperdoll data.
 // Tissue layers and armor are elements whose `data` carries material
@@ -132,6 +132,9 @@ export function applyStrike(
   // Once an edged blow fails to shear a layer, the blade is stopped: only
   // impact transmits to everything deeper.
   let bladeStopped = weapon.kind === "blunt";
+  // The load-bearing structural layer (bone) being destroyed this strike is
+  // what severs everything distal to the part.
+  let structureBroken = false;
 
   for (const layer of getLayers(next, vesselId)) {
     if (momentum < 8) break;
@@ -169,11 +172,24 @@ export function applyStrike(
 
     if (wounded) {
       const after = getCombatData(next.vessels[vesselId].contains![layer.index])!;
+      const justDestroyed = after.integrity <= 0 && data.integrity > 0;
+      if (justDestroyed && layer.element.type === "bone") structureBroken = true;
       const line = describeWound(layer.element, after);
-      if (line) events.push(after.integrity <= 0 && data.integrity > 0 ? `${line}!` : line);
+      if (line) events.push(justDestroyed ? `${line}!` : line);
     } else if (layer.element.kind === "item") {
       events.push(`glances off the ${layer.element.id}`);
       break; // armor deflected the blow outright
+    }
+  }
+
+  // Structural failure severs everything distal: the cut edge is removed and
+  // the orphaned subtree drops to free vessels (see severDistalSubtree).
+  if (structureBroken) {
+    const result = severDistalSubtree(next, vesselId);
+    if (result.severed.length > 0) {
+      next = result.body;
+      const verb = weapon.kind === "edged" ? "severed" : "torn off";
+      events.push(`the ${result.severed.join(", ")} ${result.severed.length > 1 ? "are" : "is"} ${verb}!`);
     }
   }
 
@@ -224,14 +240,17 @@ export function healAll(body: Body): Body {
 // the same philosophy as deriveLayout.
 export function deriveCondition(body: Body): string[] {
   const conditions: string[] = [];
+  const reachable = reachableVessels(body);
   let pain = 0;
   let bleeding = 0;
   const destroyedVitals: string[] = [];
+  const severedVitals: string[] = [];
   const destroyedLungs: string[] = [];
   const uselessParts: string[] = [];
 
   for (const [vesselId, vessel] of Object.entries(body.vessels)) {
     let partDisabled = false;
+    const severed = vesselId !== body.root && !reachable.has(vesselId);
     for (const element of vessel.contains ?? []) {
       const data = getCombatData(element);
       if (!data) continue;
@@ -240,16 +259,20 @@ export function deriveCondition(body: Body): string[] {
       pain += missing * (PAIN_MULTIPLIER[family] ?? 5);
       if (family === "skin" || family === "muscle" || family === "organ") bleeding += missing;
 
+      // a vital organ riding a severed (unreachable) part is lost with it
+      if (severed && data.vital) severedVitals.push(`${vesselId} severed`);
+
       if (data.integrity <= 0) {
         if (element.id?.includes("lung")) destroyedLungs.push(element.id);
         else if (data.vital) destroyedVitals.push(element.id ?? element.kind);
         if (family === "nerve" || family === "bone") partDisabled = true;
       }
     }
-    if (partDisabled) uselessParts.push(vesselId);
+    if (partDisabled && !severed) uselessParts.push(vesselId);
   }
 
   for (const vital of destroyedVitals) conditions.push(`dead (${vital} destroyed)`);
+  for (const severed of severedVitals) conditions.push(`dead (${severed})`);
   if (destroyedLungs.length >= 2) conditions.push("suffocating");
   if (pain >= 150) conditions.push("unconscious from pain");
   else if (pain >= 50) conditions.push("in great pain");

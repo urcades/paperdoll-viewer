@@ -646,18 +646,34 @@ const COMBATANT_DOCUMENT: PaperDollDocument = {
           bottom: { vessel: "torso", side: "top" }
         }
       },
-      "left-hand": {
-        accepts: partAccepts("gauntlet"),
-        contains: fleshLayers(0.5, true),
-        ports: { right: { vessel: "left-arm", side: "left" } }
-      },
-      "left-arm": {
+      "upper-left-arm": {
         accepts: partAccepts(),
         contains: fleshLayers(1, true),
         ports: {
-          left: { vessel: "left-hand", side: "right" },
-          right: { vessel: "torso", side: "left" }
+          right: { vessel: "torso", side: "left" },
+          left: { vessel: "lower-left-arm", side: "right" }
         }
+      },
+      "lower-left-arm": {
+        accepts: partAccepts(),
+        contains: fleshLayers(0.7, true),
+        ports: {
+          right: { vessel: "upper-left-arm", side: "left" },
+          left: { vessel: "left-hand", side: "right" }
+        }
+      },
+      "left-hand": {
+        accepts: partAccepts("gauntlet"),
+        contains: fleshLayers(0.5, true),
+        ports: {
+          right: { vessel: "lower-left-arm", side: "left" },
+          left: { vessel: "left-fingers", side: "right" }
+        }
+      },
+      "left-fingers": {
+        accepts: partAccepts(),
+        contains: fleshLayers(0.3, false),
+        ports: { right: { vessel: "left-hand", side: "left" } }
       },
       torso: {
         accepts: partAccepts("mail"),
@@ -673,23 +689,39 @@ const COMBATANT_DOCUMENT: PaperDollDocument = {
         ],
         ports: {
           top: { vessel: "neck", side: "bottom" },
-          left: { vessel: "left-arm", side: "right" },
-          right: { vessel: "right-arm", side: "left" },
+          left: { vessel: "upper-left-arm", side: "right" },
+          right: { vessel: "upper-right-arm", side: "left" },
           bottom: { vessel: "hips", side: "top" }
         }
       },
-      "right-arm": {
+      "upper-right-arm": {
         accepts: partAccepts(),
         contains: fleshLayers(1, true),
         ports: {
           left: { vessel: "torso", side: "right" },
+          right: { vessel: "lower-right-arm", side: "left" }
+        }
+      },
+      "lower-right-arm": {
+        accepts: partAccepts(),
+        contains: fleshLayers(0.7, true),
+        ports: {
+          left: { vessel: "upper-right-arm", side: "right" },
           right: { vessel: "right-hand", side: "left" }
         }
       },
       "right-hand": {
         accepts: partAccepts("gauntlet"),
         contains: fleshLayers(0.5, true),
-        ports: { left: { vessel: "right-arm", side: "right" } }
+        ports: {
+          left: { vessel: "lower-right-arm", side: "right" },
+          right: { vessel: "right-fingers", side: "left" }
+        }
+      },
+      "right-fingers": {
+        accepts: partAccepts(),
+        contains: fleshLayers(0.3, false),
+        ports: { left: { vessel: "right-hand", side: "right" } }
       },
       hips: {
         accepts: partAccepts(),
@@ -738,11 +770,15 @@ const COMBATANT_DOCUMENT: PaperDollDocument = {
 const COMBATANT_PRESENTATION: Record<string, VesselPresentation> = {
   head: { label: "Head", icon: "A" },
   neck: { label: "Neck", icon: "N" },
+  "upper-left-arm": { label: "Upper\nL Arm", icon: "C" },
+  "lower-left-arm": { label: "Lower\nL Arm", icon: "c" },
   "left-hand": { label: "Left\nHand", icon: "B" },
-  "left-arm": { label: "Left\nArm", icon: "C" },
+  "left-fingers": { label: "L\nFingers", icon: "b" },
   torso: { label: "Torso", icon: "@" },
-  "right-arm": { label: "Right\nArm", icon: "D" },
+  "upper-right-arm": { label: "Upper\nR Arm", icon: "D" },
+  "lower-right-arm": { label: "Lower\nR Arm", icon: "d" },
   "right-hand": { label: "Right\nHand", icon: "E" },
+  "right-fingers": { label: "R\nFingers", icon: "e" },
   hips: { label: "Hips", icon: "F" },
   "left-leg": { label: "Left\nLeg", icon: "G" },
   "right-leg": { label: "Right\nLeg", icon: "H" },
