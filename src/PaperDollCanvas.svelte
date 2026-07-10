@@ -9,6 +9,15 @@
 
   type PresetOption = { id: string; name: string };
 
+  type CanvasSpec = {
+    name: string;
+    body: Body;
+    presentation: Record<string, VesselPresentation>;
+    selection: SelectionTarget | null;
+    dropTargets: ReadonlySet<string> | null;
+    rejectVesselId: string | null;
+  };
+
   type Pan = {
     x: number;
     y: number;
@@ -20,12 +29,7 @@
   };
 
   type Props = {
-    body: Body;
-    presentation: Record<string, VesselPresentation>;
-    selection: SelectionTarget | null;
-    excludeVessels?: readonly string[];
-    dropTargets?: ReadonlySet<string> | null;
-    rejectVesselId?: string | null;
+    canvases: readonly CanvasSpec[];
     status: string;
     canDelete: boolean;
     canUndo: boolean;
@@ -45,9 +49,9 @@
     onPresetChange: (presetId: string) => void;
     onViewControlsChange: (controls: ViewControls) => void;
     onPanChange: (pan: Pan) => void;
-    onSelect: (target: SelectionTarget) => void;
-    onOpenVessel: (id: string) => void;
-    onMutate: (nextBody: Body, meta: MutationMeta) => void;
+    onSelect: (name: string, target: SelectionTarget) => void;
+    onOpenVessel: (name: string, id: string) => void;
+    onMutate: (name: string, nextBody: Body, meta: MutationMeta) => void;
     onMutationError: (error: unknown) => void;
     onDeleteSelected: () => void;
     onUndo: () => void;
@@ -61,12 +65,7 @@
   };
 
   let {
-    body,
-    presentation,
-    selection,
-    excludeVessels = [],
-    dropTargets = null,
-    rejectVesselId = null,
+    canvases,
     status,
     canDelete,
     canUndo,
@@ -209,21 +208,29 @@
       <button class="delete-node" type="button" disabled={!canDelete} onclick={onDeleteSelected}>delete</button>
     </div>
   </header>
-  <BodyCanvas
-    {body}
-    {presentation}
-    {viewControls}
-    {selection}
-    {excludeVessels}
-    {dropTargets}
-    {rejectVesselId}
-    {pan}
-    {onPanChange}
-    {onSelect}
-    {onOpenVessel}
-    {onMutate}
-    {onMutationError}
-  />
+  <div class="canvas-row" data-count={canvases.length}>
+    {#each canvases as canvas (canvas.name)}
+      <div class="canvas-column" data-body-name={canvas.name}>
+        {#if canvases.length > 1}
+          <div class="canvas-title">{canvas.name}</div>
+        {/if}
+        <BodyCanvas
+          body={canvas.body}
+          presentation={canvas.presentation}
+          {viewControls}
+          selection={canvas.selection}
+          dropTargets={canvas.dropTargets}
+          rejectVesselId={canvas.rejectVesselId}
+          {pan}
+          {onPanChange}
+          onSelect={(target) => onSelect(canvas.name, target)}
+          onOpenVessel={(id) => onOpenVessel(canvas.name, id)}
+          onMutate={(nextBody, meta) => onMutate(canvas.name, nextBody, meta)}
+          {onMutationError}
+        />
+      </div>
+    {/each}
+  </div>
   {#if status}
     <div class="status-toast" role="status">{status}</div>
   {/if}

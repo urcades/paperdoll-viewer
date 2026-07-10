@@ -205,8 +205,8 @@ describe("patch-based commit funnel", () => {
     }
     const end = current;
 
-    const applySeek = (body: Body, steps: ReturnType<History["seekTo"]>): Body =>
-      steps!.reduce((acc, step) => assertOk(applyPatch(acc, step.patch)), body);
+    const applySeek = (body: Body, seek: ReturnType<History["seekTo"]>): Body =>
+      seek!.steps.reduce((acc, step) => assertOk(applyPatch(acc, step.patch)), body);
 
     // Scrub to 0 restores the pre-strike body exactly.
     const back = history.seekTo(0);
@@ -233,7 +233,7 @@ describe("patch-based commit funnel", () => {
     let current = commitThrough(history, base, ROOT_ADDRESS, insertVessel(clone(base), {}, { id: "zone-a" }).body, "a");
     current = commitThrough(history, current, ROOT_ADDRESS, insertVessel(clone(current), {}, { id: "zone-b" }).body, "b");
 
-    current = history.seekTo(1)!.reduce((acc, step) => assertOk(applyPatch(acc, step.patch)), current);
+    current = history.seekTo(1)!.steps.reduce((acc, step) => assertOk(applyPatch(acc, step.patch)), current);
     expect(history.entries).toHaveLength(2);
 
     commitThrough(history, current, ROOT_ADDRESS, insertVessel(clone(current), {}, { id: "zone-c" }).body, "c");

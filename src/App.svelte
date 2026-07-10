@@ -26,7 +26,7 @@
   } from "./sample-document";
   import { formatSceneSource, getSceneNodeRanges, parseSceneSource } from "./construction-source";
   import { applyPatch, canonicalizeBody, diffBodies, invertPatch } from "paperfold";
-  import { History, type AppliedStep, type HistoryTag } from "./history.svelte";
+  import { History, type AppliedStep, type BodyStep, type HistoryTag } from "./history.svelte";
   import { assertApplied, snapshotBody } from "./protocol.svelte";
   import { advanceTick, applyStrike, bleedRate, deriveCondition, hasCombatLayers, healAll, WEAPONS } from "./combat";
   import { derivePowerStatus, hasPower, propagatePower } from "./power";
@@ -40,14 +40,22 @@
     type ViewControls
   } from "./workbench";
   import {
+    addRelation,
+    applySceneOps,
+    figureBodyNames,
     getBodyAtSceneAddress,
-    MAIN_BODY,
     POOL_BODY,
+    pruneDanglingRelations,
+    removeRelation,
+    resolveSceneAddress,
     replaceBodyInScene,
     splitSceneAddress,
     validateScene,
+    type Relation,
     type Scene
   } from "./scene";
+  import RelationsPanel from "./RelationsPanel.svelte";
+  import type { SceneOp } from "./history.svelte";
 
   type Pan = {
     x: number;
@@ -102,7 +110,7 @@
     structuredClone(DEFAULT_SCENE_PRESET.presentation)
   );
   let selection = $state<Selection | null>({
-    address: MAIN_BODY,
+    address: "main",
     target: { kind: "vessel", id: DEFAULT_SCENE_PRESET.scene.bodies.main.root }
   });
   let selectedPresetId = $state(DEFAULT_SCENE_PRESET.id);
@@ -116,8 +124,9 @@
   let rejectFlash = $state<{ address: string; vessel: string } | null>(null);
   let rejectTimer: ReturnType<typeof setTimeout> | undefined;
 
-  let mainBody: Body = $derived(scene.bodies[MAIN_BODY]);
-  let mainPresentation = $derived(presentation[MAIN_BODY] ?? {});
+  let figureNames = $derived(figureBodyNames(scene));
+  let primaryName = $derived(figureNames[0]);
+  let mainBody: Body = $derived(scene.bodies[primaryName]);
 
   let windowSurfaceBody: Body | null = $derived(
     vesselWindow ? getBodyAtSceneAddress(scene, vesselWindow.surface) : null
@@ -138,7 +147,7 @@
   );
   let windowTitle = $derived(getWindowTitle(vesselWindow));
   let rootSelection: SelectionTarget | null = $derived(
-    selection && selection.address === MAIN_BODY ? selection.target : null
+    selection && selection.address === primaryName ? selection.target : null
   );
   let windowSelection: SelectionTarget | null = $derived(
     selection && selection.address === windowCanvasAddress ? selection.target : null
@@ -175,7 +184,7 @@
   function pulsePower(): void {
     const result = propagatePower(snapshotBody(mainBody));
     const status = derivePowerStatus(result.body).join(" · ");
-    commitBodyAt(MAIN_BODY, result.body, { status: status || "no power network", tag: "sim", runId: simRunId });
+    commitBodyAt(primaryName, result.body, { status: status || "no power network", tag: "sim", runId: simRunId });
   }
 
   function toggleRun(): void {
@@ -233,7 +242,7 @@
     }
     const conditions = deriveCondition(result.body);
     result.body = reifyDeath(result.body, conditions);
-    commitBodyAt(MAIN_BODY, result.body, {
+    commitBodyAt(primaryName, result.body, {
       status: `Bleeding (−${bleedRate(mainBody)}/s)${conditions.length > 0 ? ` — ${conditions.join(", ")}` : ""}`,
       tag: "sim",
       runId: simRunId
@@ -242,12 +251,22 @@
   }
 
   $effect(() => () => clearInterval(bleedTimer));
-  let rootDropTargets = $derived(
-    elementDrag?.active && (elementDrag.address === MAIN_BODY || elementDrag.address === POOL_BODY)
-      ? elementDrag.targets
-      : null
+  // One canvas per figure body (side-by-side in versus scenes). A pool drag
+  // highlights the primary figure's legal targets.
+  let canvases = $derived(
+    figureNames.map((name) => ({
+      name,
+      body: scene.bodies[name],
+      presentation: presentation[name] ?? {},
+      selection: selection?.address === name ? selection.target : null,
+      dropTargets:
+        elementDrag?.active &&
+        (elementDrag.address === name || (elementDrag.address === POOL_BODY && name === primaryName))
+          ? elementDrag.targets
+          : null,
+      rejectVesselId: rejectFlash?.address === name ? rejectFlash.vessel : null
+    }))
   );
-  let rootRejectVesselId = $derived(rejectFlash?.address === MAIN_BODY ? rejectFlash.vessel : null);
   let windowDropTargets = $derived(
     elementDrag?.active && windowCanvasAddress !== null && elementDrag.address === windowCanvasAddress
       ? elementDrag.targets
@@ -355,7 +374,7 @@
   ): { address: string; vessel: string } | null {
     if (!dropped) return null;
     if (dropped.closest(".pool-panel")) {
-      return drag.address === MAIN_BODY ? { address: POOL_BODY, vessel: POOL_BODY } : null;
+      return figureNames.includes(drag.address) ? { address: POOL_BODY, vessel: POOL_BODY } : null;
     }
 
     const slot = dropped.closest(".slot");
@@ -369,8 +388,10 @@
         ? { address: windowCanvasAddress, vessel }
         : null;
     }
-    if (drag.address === MAIN_BODY || drag.address === POOL_BODY) {
-      return { address: MAIN_BODY, vessel };
+    const column = (dropped.closest("[data-body-name]") as HTMLElement | null)?.dataset.bodyName ?? null;
+    if (!column) return null;
+    if (drag.address === column || drag.address === POOL_BODY) {
+      return { address: column, vessel };
     }
     return null;
   }
@@ -390,45 +411,85 @@
     const toApplied = assertApplied(applyPatch(toPrev, toPatch));
 
     const label = `Moved ${describeElement(drag.element)} to ${toName === POOL_BODY ? "the pool" : target.vessel}`;
-    history.push({
-      steps: [
+    let nextScene = replaceBodyInScene(snapshotScene(), fromName, fromApplied);
+    nextScene = replaceBodyInScene(nextScene, toName, toApplied);
+    commitEntry(
+      nextScene,
+      [
         { bodyName: fromName, patch: fromPatch, inverse: invertPatch(fromPatch) },
         { bodyName: toName, patch: toPatch, inverse: invertPatch(toPatch) }
       ],
-      label,
-      tag: "construct",
-      runId: null
-    });
-
-    let nextScene = replaceBodyInScene(snapshotScene(), fromName, fromApplied);
-    nextScene = replaceBodyInScene(nextScene, toName, toApplied);
-    commitScene(
-      nextScene,
-      presentation,
-      viewControls,
-      toName === POOL_BODY ? selection : { address: MAIN_BODY, target: { kind: "vessel", id: target.vessel } },
-      label,
-      true
+      toName === POOL_BODY ? selection : { address: toName, target: { kind: "vessel", id: target.vessel } },
+      { status: label }
     );
   }
 
+  // Push a history entry and commit, pruning relations whose endpoints no
+  // longer hold (deleted vessels, severed limbs, transferred elements). The
+  // removals ride the same entry as scene ops, so undo restores them.
+  function commitEntry(nextScene: Scene, steps: BodyStep[], nextSelection: Selection | null, meta: MutationMeta): void {
+    const pruned = pruneDanglingRelations(nextScene);
+    const sceneOps: SceneOp[] = pruned.removed.map((relation) => ({ op: "removeRelation", relation }));
+    const label =
+      pruned.removed.length > 0
+        ? `${meta.status} — ${pruned.removed.map((relation) => `${relation.kind} ${relation.from} → ${relation.to}`).join(", ")} dropped`
+        : meta.status;
+    history.push({
+      steps,
+      sceneOps,
+      label,
+      tag: meta.tag ?? "construct",
+      runId: meta.runId ?? null
+    });
+    commitScene(pruned.scene, presentation, viewControls, nextSelection, label, true);
+  }
+
+  // In a versus scene the selected figure is the target and the other figure
+  // attacks; alone, a figure spars against itself. The attacker's weapon comes
+  // from its `wields` relation when one exists (the element's type names the
+  // WEAPONS entry); a grappled attacker strikes harder — both readings of the
+  // relation table are app semantics, paperchain only declares the edges.
   function strike(): void {
     try {
-      const body = snapshotBody(mainBody);
+      const targetName =
+        selection && figureNames.includes(selection.address) && hasCombatLayers(scene.bodies[selection.address], scene.bodies[selection.address].root)
+          ? selection.address
+          : figureNames.find((name) => hasCombatLayers(scene.bodies[name], scene.bodies[name].root)) ?? primaryName;
+      const attackerName = figureNames.find((name) => name !== targetName) ?? targetName;
+      const body = snapshotBody(scene.bodies[targetName]);
+
       const selected =
-        selection?.address === MAIN_BODY && selection.target.kind === "vessel" ? selection.target.id : null;
+        selection?.address === targetName && selection.target.kind === "vessel" ? selection.target.id : null;
+      const targetVessels = Object.keys(body.vessels).filter((id) => hasCombatLayers(body, id));
       const targetId =
         selected && hasCombatLayers(body, selected)
           ? selected
-          : combatVessels[Math.floor(Math.random() * combatVessels.length)];
-      const weapon = WEAPONS.find((candidate) => candidate.id === weaponId) ?? WEAPONS[0];
+          : targetVessels[Math.floor(Math.random() * targetVessels.length)];
+
+      let weapon = WEAPONS.find((candidate) => candidate.id === weaponId) ?? WEAPONS[0];
+      const wields = scene.relations.find(
+        (relation) => relation.kind === "wields" && relation.from.startsWith(`${attackerName}/`)
+      );
+      if (wields) {
+        const resolved = resolveSceneAddress(snapshotScene(), wields.to);
+        const wieldedType = resolved?.kind === "element" ? resolved.element.type : undefined;
+        const wielded = WEAPONS.find((candidate) => candidate.id === wieldedType);
+        if (wielded) weapon = wielded;
+      }
+      const grappled = scene.relations.some(
+        (relation) =>
+          relation.kind === "grapples" &&
+          (relation.from.startsWith(`${attackerName}/`) || relation.to.startsWith(`${attackerName}/`))
+      );
+      if (grappled) weapon = { ...weapon, momentum: Math.round(weapon.momentum * 1.35) };
 
       const result = applyStrike(body, targetId, weapon);
       const conditions = deriveCondition(result.body);
       const nextBody = reifyDeath(result.body, conditions);
-      commitBodyAt(MAIN_BODY, nextBody, {
+      const prefix = attackerName !== targetName ? `${attackerName} → ${targetName}: ` : "";
+      commitBodyAt(targetName, nextBody, {
         select: { kind: "vessel", id: targetId },
-        status: conditions.length > 0 ? `${result.log} — ${conditions.join(", ")}` : result.log,
+        status: `${prefix}${conditions.length > 0 ? `${result.log} — ${conditions.join(", ")}` : result.log}`,
         tag: "sim",
         runId: simRunId
       });
@@ -440,7 +501,9 @@
   function healCombatant(): void {
     try {
       stopBleed();
-      commitBodyAt(MAIN_BODY, healAll(snapshotBody(mainBody)), {
+      // Heal whichever figure is selected (or the primary).
+      const targetName = selection && figureNames.includes(selection.address) ? selection.address : primaryName;
+      commitBodyAt(targetName, healAll(snapshotBody(scene.bodies[targetName])), {
         status: "All wounds healed"
       });
     } catch (error) {
@@ -480,8 +543,8 @@
         : `Selected connection ${label} — cannot sever: would orphan ported vessels`;
   }
 
-  function openVessel(vesselId: string): void {
-    vesselWindow = { surface: MAIN_BODY, vessel: vesselId, bodyElementId: null, drawerVessel: null };
+  function openVessel(bodyName: string, vesselId: string): void {
+    vesselWindow = { surface: bodyName, vessel: vesselId, bodyElementId: null, drawerVessel: null };
   }
 
   // Addresses are element-id based (law 8), so opening a body requires the
@@ -544,20 +607,46 @@
         return;
       }
       const applied = assertApplied(applyPatch(prevBody, patch));
-      history.push({
-        steps: [{ bodyName, patch, inverse: invertPatch(patch) }],
-        label: meta.status,
-        tag: meta.tag ?? "construct",
-        runId: meta.runId ?? null
-      });
-      commitScene(
+      commitEntry(
         replaceBodyInScene(snapshotScene(), bodyName, applied),
-        presentation,
-        viewControls,
+        [{ bodyName, patch, inverse: invertPatch(patch) }],
         meta.select ? { address: sceneAddress, target: meta.select } : selection,
-        meta.status,
-        true
+        meta
       );
+    } catch (error) {
+      setErrorStatus(error);
+    }
+  }
+
+  // Relation edits are scene-level ops paperfold can't express; they get
+  // their own history entries with the opposite op as inverse.
+  function handleAddRelation(relation: Relation): void {
+    try {
+      const next = addRelation(snapshotScene(), relation);
+      history.push({
+        steps: [],
+        sceneOps: [{ op: "addRelation", relation }],
+        label: `Related ${relation.from} ${relation.kind} ${relation.to}`,
+        tag: "construct",
+        runId: null
+      });
+      commitScene(next, presentation, viewControls, selection, `Related ${relation.from} ${relation.kind} ${relation.to}`, true);
+    } catch (error) {
+      setErrorStatus(error);
+    }
+  }
+
+  function handleRemoveRelation(relation: Relation): void {
+    try {
+      const { scene: next } = removeRelation(snapshotScene(), relation);
+      history.push({
+        steps: [],
+        sceneOps: [{ op: "removeRelation", relation }],
+        label: `Unrelated ${relation.from} ${relation.kind} ${relation.to}`,
+        tag: "construct",
+        runId: null
+      });
+      commitScene(next, presentation, viewControls, selection, `Unrelated ${relation.from} ${relation.kind} ${relation.to}`, true);
     } catch (error) {
       setErrorStatus(error);
     }
@@ -573,7 +662,10 @@
     applySteps(history.redo(), "Redid");
   }
 
-  function applySteps(result: { label: string; steps: AppliedStep[] } | null, verb: string): void {
+  function applySteps(
+    result: { label: string; steps: AppliedStep[]; sceneOps: SceneOp[] } | null,
+    verb: string
+  ): void {
     if (!result) return;
     try {
       stopBleed();
@@ -583,6 +675,7 @@
         const applied = assertApplied(applyPatch(nextScene.bodies[step.bodyName], step.patch));
         nextScene = replaceBodyInScene(nextScene, step.bodyName, applied);
       }
+      nextScene = applySceneOps(nextScene, result.sceneOps);
       commitScene(nextScene, presentation, viewControls, selection, `${verb}: ${result.label}`, true);
     } catch (error) {
       setErrorStatus(error);
@@ -593,13 +686,14 @@
     try {
       stopBleed();
       stopRun();
-      const steps = history.seekTo(index);
-      if (!steps) return;
+      const seek = history.seekTo(index);
+      if (!seek) return;
       let nextScene = snapshotScene();
-      for (const step of steps) {
+      for (const step of seek.steps) {
         const applied = assertApplied(applyPatch(nextScene.bodies[step.bodyName], step.patch));
         nextScene = replaceBodyInScene(nextScene, step.bodyName, applied);
       }
+      nextScene = applySceneOps(nextScene, seek.sceneOps);
       commitScene(
         nextScene,
         presentation,
@@ -670,7 +764,10 @@
       structuredClone(preset.scene),
       structuredClone(preset.presentation),
       structuredClone(INITIAL_VIEW_CONTROLS),
-      { address: MAIN_BODY, target: { kind: "vessel", id: preset.scene.bodies.main.root } },
+      {
+        address: figureBodyNames(preset.scene)[0],
+        target: { kind: "vessel", id: preset.scene.bodies[figureBodyNames(preset.scene)[0]].root }
+      },
       `Selected ${preset.name}`,
       true
     );
@@ -739,8 +836,8 @@
 
   function reconcileSelection(candidate: Selection | null): Selection {
     const rootFallback: Selection = {
-      address: MAIN_BODY,
-      target: { kind: "vessel", id: scene.bodies[MAIN_BODY].root }
+      address: primaryName,
+      target: { kind: "vessel", id: scene.bodies[primaryName].root }
     };
     if (!candidate) return rootFallback;
 
@@ -804,11 +901,7 @@
 
 <div class="paper-doll-editor">
   <PaperDollCanvas
-    body={mainBody}
-    presentation={mainPresentation}
-    selection={rootSelection}
-    dropTargets={rootDropTargets}
-    rejectVesselId={rootRejectVesselId}
+    {canvases}
     {status}
     {canDelete}
     canUndo={history.canUndo}
@@ -830,9 +923,9 @@
     onPresetChange={handlePresetChange}
     onViewControlsChange={handleViewControlsChange}
     onPanChange={(nextPan) => (pan = nextPan)}
-    onSelect={(target) => selectAt(MAIN_BODY, target)}
+    onSelect={(name, target) => selectAt(name, target)}
     onOpenVessel={openVessel}
-    onMutate={(nextBody, meta) => commitBodyAt(MAIN_BODY, nextBody, meta)}
+    onMutate={(name, nextBody, meta) => commitBodyAt(name, nextBody, meta)}
     onMutationError={setErrorStatus}
     onDeleteSelected={deleteSelected}
     onUndo={undo}
@@ -892,7 +985,7 @@
       onModeChange={setMode}
       source={constructionSource}
       status={sourceStatus}
-      selectedId={`${MAIN_BODY}/${selectedRootVesselId}`}
+      selectedId={`${primaryName}/${selectedRootVesselId}`}
       nodeRanges={nodeRanges}
       onSourceChange={handleConstructionSourceChange}
       onSelectNode={(id) => {
@@ -901,14 +994,19 @@
       }}
     />
   {:else}
-    <PoolPanel
-      {mode}
-      onModeChange={setMode}
-      elements={poolElements}
-      onElementPointerDown={(event, index) => beginElementDrag(event, POOL_BODY, POOL_BODY, index)}
-      onElementPointerMove={updateElementDrag}
-      onElementPointerUp={endElementDrag}
-    />
+    <div class="play-panels">
+      <PoolPanel
+        {mode}
+        onModeChange={setMode}
+        elements={poolElements}
+        onElementPointerDown={(event, index) => beginElementDrag(event, POOL_BODY, POOL_BODY, index)}
+        onElementPointerMove={updateElementDrag}
+        onElementPointerUp={endElementDrag}
+      />
+      {#if Object.keys(scene.kinds).length > 0 || scene.relations.length > 0}
+        <RelationsPanel {scene} onAdd={handleAddRelation} onRemove={handleRemoveRelation} />
+      {/if}
+    </div>
   {/if}
   {#if mode === "play"}
     <TimelinePanel entries={history.entries} cursor={history.cursor} onSeek={seekTimeline} />

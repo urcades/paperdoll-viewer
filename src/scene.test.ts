@@ -2,13 +2,20 @@
 // the pool as a real body, cross-body transfers as multi-step history entries.
 
 import { describe, expect, it } from "vitest";
-import { insertElement, parseDocument, removeElement, type Body } from "paperdoll";
+import { deleteVessel, insertElement, parseDocument, removeElement, type Body } from "paperdoll";
 import { parseScene, validateScene } from "paperchain";
 import { applyPatch, diffBodies, invertPatch } from "paperfold";
 import { History } from "./history.svelte";
 import { SCENE_PRESETS } from "./sample-document";
 import { formatSceneSource, getSceneNodeRanges, parseSceneSource } from "./construction-source";
-import { getBodyAtSceneAddress, replaceBodyInScene, splitSceneAddress } from "./scene";
+import { severDistalSubtree } from "./workbench";
+import {
+  addRelation,
+  getBodyAtSceneAddress,
+  pruneDanglingRelations,
+  replaceBodyInScene,
+  splitSceneAddress
+} from "./scene";
 
 function assertOk<T>(result: { ok: true; value: T } | { ok: false; errors: unknown }): T {
   if (!result.ok) throw new Error(JSON.stringify(result.errors));
@@ -25,7 +32,7 @@ function elementMultiset(body: Body): string[] {
 const VIEW = { node: 33, connector: 55, padding: 0 };
 
 describe("scene presets", () => {
-  it("ships every legacy preset as a valid two-body scene", () => {
+  it("ships every preset as a valid scene", () => {
     expect(SCENE_PRESETS.map((preset) => preset.id)).toEqual([
       "humanoid",
       "mech",
@@ -33,19 +40,24 @@ describe("scene presets", () => {
       "satellite",
       "hand",
       "combatant",
-      "powered-mech"
+      "powered-mech",
+      "versus-arena"
     ]);
 
     for (const preset of SCENE_PRESETS) {
       expect(validateScene(preset.scene), preset.id).toEqual([]);
-      expect(Object.keys(preset.scene.bodies).sort(), preset.id).toEqual(["main", "pool"]);
+      const bodyNames = Object.keys(preset.scene.bodies).sort();
+      if (preset.id === "versus-arena") {
+        expect(bodyNames).toEqual(["blue", "pool", "red"]);
+      } else {
+        expect(bodyNames, preset.id).toEqual(["main", "pool"]);
+        expect(preset.scene.bodies.main.vessels.pool, preset.id).toBeUndefined();
+        expect(preset.presentation.main[preset.scene.bodies.main.root], preset.id).toBeDefined();
+      }
       // Each body is independently paper-doll valid.
       for (const body of Object.values(preset.scene.bodies)) {
         expect(parseDocument({ protocol: "paper-doll/v3", body }).ok, preset.id).toBe(true);
       }
-      // The figure no longer smuggles a pool vessel.
-      expect(preset.scene.bodies.main.vessels.pool, preset.id).toBeUndefined();
-      expect(preset.presentation.main[preset.scene.bodies.main.root], preset.id).toBeDefined();
     }
   });
 
@@ -121,6 +133,78 @@ describe("cross-body transfers", () => {
       SCENE_PRESETS.find((candidate) => candidate.id === "humanoid")!.scene.bodies.main.vessels["left-hand"]
         .contains ?? []
     );
+  });
+});
+
+describe("versus arena relations", () => {
+  const arena = () => structuredClone(SCENE_PRESETS.find((preset) => preset.id === "versus-arena")!.scene);
+
+  it("declares wields and grapples with multiplicity laws, and starts armed", () => {
+    const scene = arena();
+    expect(scene.kinds.wields).toEqual({ fromMax: 1, toMax: 1 });
+    expect(scene.kinds.grapples).toEqual({ symmetric: true, irreflexive: true, fromMax: 1 });
+    expect(scene.relations).toEqual([
+      { kind: "wields", from: "red/right-hand", to: "red/right-hand/arena-sword" }
+    ]);
+    expect(validateScene(scene)).toEqual([]);
+  });
+
+  it("refuses a second wield from the same hand (fromMax) — trial-apply legality", () => {
+    let scene = arena();
+    // Give blue a dagger so there is a second weapon to point at.
+    scene = replaceBodyInScene(
+      scene,
+      "blue",
+      insertElement(scene.bodies.blue, "left-hand", { kind: "item", type: "dagger", id: "arena-dagger" })
+    );
+    expect(() =>
+      addRelation(scene, { kind: "wields", from: "red/right-hand", to: "blue/left-hand/arena-dagger" })
+    ).toThrowError(/fromMax|budget|1/);
+    // A different hand may wield it.
+    const legal = addRelation(scene, { kind: "wields", from: "blue/left-hand", to: "blue/left-hand/arena-dagger" });
+    expect(validateScene(legal)).toEqual([]);
+  });
+
+  it("grapples is symmetric and irreflexive", () => {
+    const scene = arena();
+    const grappled = addRelation(scene, { kind: "grapples", from: "red/right-hand", to: "blue/left-hand" });
+    // Symmetric duplicate in either order is refused.
+    expect(() => addRelation(grappled, { kind: "grapples", from: "blue/left-hand", to: "red/right-hand" })).toThrow();
+    expect(() => addRelation(scene, { kind: "grapples", from: "red/right-hand", to: "red/right-hand" })).toThrow();
+  });
+
+  it("disarms by dismemberment: severing the wielding arm prunes the wields relation", () => {
+    const scene = arena();
+    // Sever at red's lower right arm — everything distal (the wielding hand
+    // and fingers) detaches into free vessels.
+    const { body: severed } = severDistalSubtree(structuredClone(scene.bodies.red), "lower-right-arm");
+    const nextScene = replaceBodyInScene(scene, "red", severed);
+
+    // The endpoints still *resolve* (the hand still exists as a free vessel),
+    // so paperchain alone would keep the relation — the "attached to root"
+    // reading is consumer judgment, applied by pruneDanglingRelations.
+    expect(validateScene(nextScene)).toEqual([]);
+    const pruned = pruneDanglingRelations(nextScene);
+    expect(pruned.removed).toEqual([
+      { kind: "wields", from: "red/right-hand", to: "red/right-hand/arena-sword" }
+    ]);
+    expect(pruned.scene.relations).toEqual([]);
+    expect(validateScene(pruned.scene)).toEqual([]);
+  });
+
+  it("prunes relations whose endpoint vessel was deleted outright", () => {
+    let scene = arena();
+    scene = addRelation(scene, { kind: "grapples", from: "red/left-hand", to: "blue/right-hand" });
+    const { body } = deleteVessel(structuredClone(scene.bodies.blue), "right-hand", {
+      collapseOppositeNeighbors: true
+    });
+    const nextScene = replaceBodyInScene(scene, "blue", body);
+
+    // A deleted endpoint makes the scene invalid until pruned.
+    expect(validateScene(nextScene).length).toBeGreaterThan(0);
+    const pruned = pruneDanglingRelations(nextScene);
+    expect(pruned.removed.map((relation) => relation.kind)).toEqual(["grapples"]);
+    expect(validateScene(pruned.scene)).toEqual([]);
   });
 });
 

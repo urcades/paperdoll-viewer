@@ -981,5 +981,69 @@ function toScenePreset(preset: PaperDollPreset): ScenePreset {
   };
 }
 
-export const SCENE_PRESETS: readonly ScenePreset[] = PAPER_DOLL_PRESETS.map(toScenePreset);
+// Versus arena: two combatants in one scene, related by typed paperchain
+// kinds. `wields` links a hand vessel to the weapon element it holds (one
+// weapon per hand, one wielder per weapon); `grapples` is a symmetric lock.
+function versusArenaPreset(): ScenePreset {
+  const combatant = PAPER_DOLL_PRESETS.find((preset) => preset.id === "combatant")!;
+  const makeFighter = (): PaperDollDocument["body"] => {
+    const body = structuredClone(combatant.document.body);
+    delete body.vessels.pool;
+    // Fighters can hold weapons, not just wear gauntlets.
+    for (const hand of ["left-hand", "right-hand"]) {
+      body.vessels[hand].accepts = [
+        ...(body.vessels[hand].accepts ?? []),
+        ...WEAPON_TOKENS
+      ];
+    }
+    return body;
+  };
+
+  const red = makeFighter();
+  red.vessels["right-hand"].contains = [
+    ...(red.vessels["right-hand"].contains ?? []),
+    { kind: "item", type: "sword", id: "arena-sword" }
+  ];
+  const blue = makeFighter();
+
+  const presentation = structuredClone(combatant.presentation);
+  delete presentation.pool;
+
+  return {
+    id: "versus-arena",
+    name: "Versus Arena",
+    scene: {
+      protocol: PAPERCHAIN_PROTOCOL,
+      bodies: {
+        red,
+        blue,
+        pool: {
+          root: "pool",
+          vessels: { pool: { contains: structuredClone(combatant.document.body.vessels.pool?.contains ?? []) } }
+        }
+      },
+      kinds: {
+        wields: { fromMax: 1, toMax: 1 },
+        grapples: { symmetric: true, irreflexive: true, fromMax: 1 }
+      },
+      relations: [{ kind: "wields", from: "red/right-hand", to: "red/right-hand/arena-sword" }]
+    },
+    presentation: {
+      red: structuredClone(presentation),
+      blue: structuredClone(presentation),
+      pool: { pool: { label: "Pool", icon: "P" } }
+    }
+  };
+}
+
+const WEAPON_TOKENS = [
+  { kind: "item", type: "sword" },
+  { kind: "item", type: "dagger" },
+  { kind: "item", type: "warhammer" }
+];
+
+export const SCENE_PRESETS: readonly ScenePreset[] = [
+  ...PAPER_DOLL_PRESETS.map(toScenePreset),
+  versusArenaPreset()
+];
 export const DEFAULT_SCENE_PRESET = SCENE_PRESETS[0];
