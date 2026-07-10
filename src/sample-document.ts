@@ -676,8 +676,9 @@ const COMBATANT_DOCUMENT: PaperDollDocument = {
         ports: { right: { vessel: "left-hand", side: "left" } }
       },
       torso: {
-        accepts: partAccepts("mail"),
+        accepts: [{ kind: "tissue" }, { kind: "organ" }, { kind: "fluid" }, { kind: "item", type: "mail" }],
         contains: [
+          { kind: "fluid", id: "blood", data: { volume: 100, max: 100 } },
           tissue("skin", "skin", 25),
           tissue("fat", "fat", 20),
           tissue("muscle", "muscle", 40),

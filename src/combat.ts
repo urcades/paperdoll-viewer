@@ -182,14 +182,24 @@ export function applyStrike(
     }
   }
 
-  // Structural failure severs everything distal: the cut edge is removed and
-  // the orphaned subtree drops to free vessels (see severDistalSubtree).
+  // Structural failure: edged cuts detach cleanly (the distal subtree drops
+  // to free vessels), blunt pulps — the part stays attached but everything
+  // inside it is destroyed.
   if (structureBroken) {
-    const result = severDistalSubtree(next, vesselId);
-    if (result.severed.length > 0) {
-      next = result.body;
-      const verb = weapon.kind === "edged" ? "severed" : "torn off";
-      events.push(`the ${result.severed.join(", ")} ${result.severed.length > 1 ? "are" : "is"} ${verb}!`);
+    if (weapon.kind === "edged") {
+      const result = severDistalSubtree(next, vesselId);
+      if (result.severed.length > 0) {
+        next = result.body;
+        events.push(`the ${result.severed.join(", ")} ${result.severed.length > 1 ? "are" : "is"} severed!`);
+      }
+    } else {
+      for (const layer of getLayers(next, vesselId)) {
+        const data = getCombatData(next.vessels[vesselId].contains![layer.index])!;
+        if (layer.element.kind !== "item" && data.integrity > 0) {
+          next = wound(next, vesselId, layer.index, data, data.integrity);
+        }
+      }
+      events.push(`the ${vesselId} is crushed into a pulp!`);
     }
   }
 
@@ -232,8 +242,72 @@ export function healAll(body: Body): Body {
       if (data.integrity === data.max) continue;
       next = replaceElementData(next, vesselId, layer.index, { ...data, integrity: data.max } as never);
     }
+    (next.vessels[vesselId].contains ?? []).forEach((element, index) => {
+      const fluid = element.kind === "fluid" ? getFluidData(element) : null;
+      if (fluid && fluid.volume < fluid.max) {
+        next = replaceElementData(next, vesselId, index, { ...fluid, volume: fluid.max } as never);
+      }
+    });
   }
   return next;
+}
+
+// Blood is a fluid element (no material — weapons can't strike it); its
+// volume drains over ticks proportionally to open wounds and severed stumps.
+export type FluidData = { volume: number; max: number };
+
+export function getFluidData(element: ContainedElement): FluidData | null {
+  const data = element.data;
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  const candidate = data as Partial<FluidData>;
+  if (typeof candidate.volume !== "number" || typeof candidate.max !== "number") return null;
+  return data as FluidData;
+}
+
+function findBlood(body: Body): { vessel: VesselId; index: number; data: FluidData } | null {
+  for (const [vesselId, vessel] of Object.entries(body.vessels)) {
+    const index = (vessel.contains ?? []).findIndex(
+      (element) => element.kind === "fluid" && getFluidData(element)
+    );
+    if (index !== -1) return { vessel: vesselId, index, data: getFluidData(vessel.contains![index])! };
+  }
+  return null;
+}
+
+// Open soft-tissue wounds on the attached figure drip; severed stumps pour.
+export function bleedRate(body: Body): number {
+  const reachable = reachableVessels(body);
+  let rate = 0;
+  for (const [vesselId, vessel] of Object.entries(body.vessels)) {
+    if (!reachable.has(vesselId)) {
+      // a severed stump pours blood from its exposed tissue; an unreachable
+      // item stash (the pool) is not a wound
+      if (vessel.contains?.some((element) => element.kind !== "item" && getCombatData(element))) rate += 3;
+      continue;
+    }
+    for (const element of vessel.contains ?? []) {
+      const data = getCombatData(element);
+      if (!data) continue;
+      const family = tissueFamily(element);
+      if (family === "skin" || family === "muscle" || family === "organ") {
+        rate += (1 - data.integrity / data.max) * 0.6;
+      }
+    }
+  }
+  return Math.round(rate * 10) / 10;
+}
+
+export function advanceTick(body: Body): { body: Body; changed: boolean } {
+  const blood = findBlood(body);
+  if (!blood || blood.data.volume <= 0) return { body, changed: false };
+  const rate = bleedRate(body);
+  if (rate <= 0) return { body, changed: false };
+
+  const volume = Math.max(0, Math.round((blood.data.volume - rate) * 10) / 10);
+  return {
+    body: replaceElementData(body, blood.vessel, blood.index, { ...blood.data, volume } as never),
+    changed: true
+  };
 }
 
 // Functional consequences are derived from the document, never stored —
@@ -255,12 +329,17 @@ export function deriveCondition(body: Body): string[] {
       const data = getCombatData(element);
       if (!data) continue;
       const family = tissueFamily(element);
+
+      // a vital organ riding a severed (unreachable) part is lost with it;
+      // detached parts no longer contribute pain or bleeding to the figure
+      if (severed) {
+        if (data.vital) severedVitals.push(`${vesselId} severed`);
+        continue;
+      }
+
       const missing = 1 - data.integrity / data.max;
       pain += missing * (PAIN_MULTIPLIER[family] ?? 5);
       if (family === "skin" || family === "muscle" || family === "organ") bleeding += missing;
-
-      // a vital organ riding a severed (unreachable) part is lost with it
-      if (severed && data.vital) severedVitals.push(`${vesselId} severed`);
 
       if (data.integrity <= 0) {
         if (element.id?.includes("lung")) destroyedLungs.push(element.id);
@@ -273,6 +352,16 @@ export function deriveCondition(body: Body): string[] {
 
   for (const vital of destroyedVitals) conditions.push(`dead (${vital} destroyed)`);
   for (const severed of severedVitals) conditions.push(`dead (${severed})`);
+
+  const blood = findBlood(body);
+  if (blood) {
+    const ratio = blood.data.volume / blood.data.max;
+    if (ratio <= 0) conditions.push("dead (bled out)");
+    else if (ratio < 0.25) conditions.push("unconscious from blood loss");
+    else if (ratio < 0.5) conditions.push("dizzy from blood loss");
+    else if (ratio < 0.8) conditions.push("pale");
+  }
+
   if (destroyedLungs.length >= 2) conditions.push("suffocating");
   if (pain >= 150) conditions.push("unconscious from pain");
   else if (pain >= 50) conditions.push("in great pain");

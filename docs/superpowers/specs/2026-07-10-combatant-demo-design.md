@@ -74,6 +74,32 @@ being an illegal move. `deriveCondition` treats a vital organ on a severed
 `heal` restores integrity only; it does not reattach severed parts (reset by
 reselecting the preset) — thematically correct for the gore demo.
 
+## Bleeding, pulping, reattachment (added 2026-07-10)
+
+These three compose into a game loop: fight → bleed → race to reattach/heal
+before death.
+
+- **Pulping** — edged structural breaks sever (clean detach); blunt structural
+  breaks *pulp*: the part stays attached but every tissue layer is destroyed
+  in place ("crushed into a pulp"). Restores an honest edged/blunt asymmetry.
+- **Bleeding over time** — blood is a `fluid` element in the torso
+  (`data: {volume, max}`, no material so weapons can't strike it). A 1s tick
+  (`advanceTick`, pure; driven by `setInterval` in App via the commit funnel)
+  drains it by `bleedRate(body)` — open soft-tissue wounds drip, severed stumps
+  pour. `deriveCondition` reads volume ratio (pale → dizzy → unconscious →
+  "dead (bled out)"). The source panel visibly rewrites the volume each tick.
+  A "bleed" header toggle starts/stops it; it self-stops on death or when
+  bleeding reaches zero. Detached parts stop contributing pain/bleeding to the
+  figure (their loop `continue`s in deriveCondition).
+- **Reattachment** — needs *no new machinery*: a severed part is a valid free
+  vessel, so the existing edge-drag-to-connect reattaches it (drag neck's top
+  handle to the free head → `connect` → head rejoins the figure). The gore demo
+  run backwards is the surgery demo. `heal` restores integrity and refills
+  blood but does not reattach (drag to do that, or reselect the preset).
+
+Known rough edge: severed free parts pile in the free row *below* the clipped
+canvas — you must pan down to reach them for reattachment.
+
 ## Out of scope
 
 Skills/dodging, weapon quality/lodging, wrestling stress types, infection,

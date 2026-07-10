@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { connect, deleteVessel, deriveLayout, insertElement, insertVessel, parseDocument, type Body } from "paperdoll";
-import { applyStrike, deriveCondition, getCombatData, healAll, WEAPONS } from "./combat";
+import { advanceTick, applyStrike, bleedRate, deriveCondition, getCombatData, healAll, WEAPONS } from "./combat";
 import { reachableVessels, severDistalSubtree } from "./workbench";
 import {
   DEFAULT_CANVAS_PADDING,
@@ -465,5 +465,63 @@ describe("severing", () => {
     const { body, severed } = severDistalSubtree(before, "torso");
     expect(severed).toEqual([]);
     expect(body).toBe(before);
+  });
+});
+
+describe("pulping and bleeding", () => {
+  const combatant = () => structuredClone(PAPER_DOLL_PRESETS.find((preset) => preset.id === "combatant")!.document.body);
+  const weapon = (id: string) => WEAPONS.find((candidate) => candidate.id === id)!;
+  const bloodVolume = (body: Body) => {
+    const el = body.vessels.torso.contains!.find((element) => element.kind === "fluid")!;
+    return (el.data as { volume: number }).volume;
+  };
+
+  it("a blunt structural break pulps the part in place (not severed)", () => {
+    let body = combatant();
+    for (let i = 0; i < 15; i += 1) body = applyStrike(body, "left-hand", weapon("warhammer"), () => 0.95).body;
+
+    // pulped: still attached (reachable), every tissue layer destroyed
+    expect(reachableVessels(body).has("left-hand")).toBe(true);
+    for (const element of body.vessels["left-hand"].contains!) {
+      if (getCombatData(element) && element.kind !== "item") {
+        expect((element.data as { integrity: number }).integrity).toBe(0);
+      }
+    }
+  });
+
+  it("bleed rate rises with open wounds and advanceTick drains blood", () => {
+    const healthy = combatant();
+    expect(bleedRate(healthy)).toBe(0);
+
+    const wounded = applyStrike(healthy, "torso", weapon("sword"), () => 0.95).body;
+    expect(bleedRate(wounded)).toBeGreaterThan(0);
+
+    const before = bloodVolume(wounded);
+    const { body: ticked, changed } = advanceTick(wounded);
+    expect(changed).toBe(true);
+    expect(bloodVolume(ticked)).toBeLessThan(before);
+    expect(parseDocument({ protocol: "paper-doll/v3", body: ticked }).ok).toBe(true);
+  });
+
+  it("draining all blood derives death", () => {
+    let body = applyStrike(combatant(), "torso", weapon("sword"), () => 0.95).body;
+    for (let i = 0; i < 400 && bloodVolume(body) > 0; i += 1) body = advanceTick(body).body;
+
+    expect(bloodVolume(body)).toBe(0);
+    expect(deriveCondition(body)).toContain("dead (bled out)");
+  });
+
+  it("a severed stump bleeds faster than a surface wound", () => {
+    const cut = applyStrike(combatant(), "left-hand", weapon("dagger"), () => 0.95).body; // surface
+    const { body: decap } = severDistalSubtree(combatant(), "neck");
+    expect(bleedRate(decap)).toBeGreaterThan(bleedRate(cut));
+  });
+
+  it("heal refills blood and advanceTick then stops", () => {
+    let body = applyStrike(combatant(), "torso", weapon("sword"), () => 0.95).body;
+    body = advanceTick(body).body;
+    body = healAll(body);
+    expect(bloodVolume(body)).toBe(100);
+    expect(advanceTick(body).changed).toBe(false);
   });
 });

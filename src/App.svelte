@@ -29,7 +29,7 @@
     getConstructionNodeRanges,
     parseConstructionSource
   } from "./construction-source";
-  import { applyStrike, deriveCondition, hasCombatLayers, healAll, WEAPONS } from "./combat";
+  import { advanceTick, applyStrike, bleedRate, deriveCondition, hasCombatLayers, healAll, WEAPONS } from "./combat";
   import {
     canDisconnect,
     describeElement,
@@ -138,6 +138,39 @@
   );
   let canStrike = $derived(combatVessels.length > 0);
   let condition = $derived(deriveCondition(document.body));
+  let bleeding = $state(false);
+  let bleedTimer: ReturnType<typeof setInterval> | undefined;
+
+  function toggleBleed(): void {
+    if (bleeding) {
+      stopBleed();
+      return;
+    }
+    bleeding = true;
+    bleedTimer = setInterval(tickBleed, 1000);
+    tickBleed();
+  }
+
+  function stopBleed(): void {
+    bleeding = false;
+    clearInterval(bleedTimer);
+    bleedTimer = undefined;
+  }
+
+  function tickBleed(): void {
+    const result = advanceTick($state.snapshot(document.body) as Body);
+    if (!result.changed) {
+      stopBleed();
+      return;
+    }
+    const conditions = deriveCondition(result.body);
+    commitBodyAt(ROOT_ADDRESS, result.body, {
+      status: `Bleeding (−${bleedRate(document.body)}/s)${conditions.length > 0 ? ` — ${conditions.join(", ")}` : ""}`
+    });
+    if (conditions.some((line) => line.startsWith("dead"))) stopBleed();
+  }
+
+  $effect(() => () => clearInterval(bleedTimer));
   let rootDropTargets = $derived(
     elementDrag?.active && elementDrag.address === ROOT_ADDRESS ? elementDrag.targets : null
   );
@@ -263,6 +296,7 @@
 
   function healCombatant(): void {
     try {
+      stopBleed();
       commitBodyAt(ROOT_ADDRESS, healAll($state.snapshot(document.body) as Body), {
         status: "All wounds healed"
       });
@@ -535,6 +569,7 @@
     {canDelete}
     {canStrike}
     {weaponId}
+    {bleeding}
     presets={PAPER_DOLL_PRESETS}
     {selectedPresetId}
     {pan}
@@ -549,6 +584,7 @@
     onMutationError={setErrorStatus}
     onDeleteSelected={deleteSelected}
     onWeaponChange={(id) => (weaponId = id)}
+    onToggleBleed={toggleBleed}
     onStrike={strike}
     onHeal={healCombatant}
   >

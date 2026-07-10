@@ -30,6 +30,7 @@
     canDelete: boolean;
     canStrike: boolean;
     weaponId: string;
+    bleeding: boolean;
     presets: readonly PaperDollPreset[];
     selectedPresetId: string;
     pan: Pan;
@@ -46,6 +47,7 @@
     onDeleteSelected: () => void;
     onWeaponChange: (weaponId: string) => void;
     onStrike: () => void;
+    onToggleBleed: () => void;
     onHeal: () => void;
   };
 
@@ -61,6 +63,7 @@
     canDelete,
     canStrike,
     weaponId,
+    bleeding,
     presets,
     selectedPresetId,
     pan,
@@ -77,6 +80,7 @@
     onDeleteSelected,
     onWeaponChange,
     onStrike,
+    onToggleBleed,
     onHeal
   }: Props = $props();
 
@@ -162,6 +166,9 @@
           {/each}
         </select>
         <button class="damage-button" type="button" onclick={onStrike}>strike</button>
+        <button class="heal-button" type="button" data-active={bleeding} onclick={onToggleBleed}>
+          {bleeding ? "stop bleed" : "bleed"}
+        </button>
         <button class="heal-button" type="button" onclick={onHeal}>heal</button>
       {/if}
       <button class="delete-node" type="button" disabled={!canDelete} onclick={onDeleteSelected}>delete</button>
