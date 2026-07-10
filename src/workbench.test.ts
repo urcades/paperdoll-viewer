@@ -22,12 +22,12 @@ import {
 } from "./workbench";
 
 describe("paperdoll viewer construction flow", () => {
-  it("uses a valid v2 protocol document as the body model", () => {
+  it("uses a valid v3 protocol document as the body model", () => {
     const parsed = parseDocument(DEFAULT_DOCUMENT);
 
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
-    expect(parsed.value.protocol).toBe("paper-doll/v2");
+    expect(parsed.value.protocol).toBe("paper-doll/v3");
     expect(parsed.value.body.root).toBe("body");
     expect(parsed.value.body.vessels["right-hand"]).toBeDefined();
   });
@@ -48,7 +48,7 @@ describe("paperdoll viewer construction flow", () => {
     const backContents = DEFAULT_DOCUMENT.body.vessels.back.contains ?? [];
     const backpack = backContents.find((element) => element.body);
 
-    expect(backpack?.id).toBe("Nested backpack");
+    expect(backpack?.id).toBe("nested-backpack");
     expect(backpack?.body?.root).toBe("pack-shell");
     expect(backpack?.body?.vessels["loose-ration"].ports).toBeUndefined();
 
@@ -64,7 +64,7 @@ describe("paperdoll viewer construction flow", () => {
     expect(rightHand).toMatchObject({
       label: "Right Hand",
       icon: "H",
-      item: "Torch"
+      item: "torch"
     });
   });
 
@@ -141,7 +141,7 @@ describe("paperdoll viewer construction flow", () => {
 
   it("collapses opposite neighbors through the paperdoll package", () => {
     const inserted = insertVessel(DEFAULT_DOCUMENT.body, {}, { at: { vessel: "body", side: "right" } });
-    const deleted = deleteVessel(inserted.body, inserted.vesselId, { collapseOppositeNeighbors: true });
+    const { body: deleted } = deleteVessel(inserted.body, inserted.vesselId, { collapseOppositeNeighbors: true });
     const parsed = parseDocument({ ...DEFAULT_DOCUMENT, body: deleted });
 
     expect(parsed.ok).toBe(true);
@@ -212,7 +212,7 @@ describe("body path helpers", () => {
     expect(getBodyAtPath(nextRoot, BACKPACK_PATH)?.vessels["side-loop"]).toBeDefined();
     expect(getBodyAtPath(DEFAULT_DOCUMENT.body, BACKPACK_PATH)?.vessels["side-loop"]).toBeUndefined();
     expect(nextRoot.vessels.feet).toBe(DEFAULT_DOCUMENT.body.vessels.feet);
-    expect(parseDocument({ protocol: "paper-doll/v2", body: nextRoot }).ok).toBe(true);
+    expect(parseDocument({ protocol: "paper-doll/v3", body: nextRoot }).ok).toBe(true);
   });
 
   it("replaces the root body for an empty path", () => {
@@ -241,7 +241,7 @@ describe("body path helpers", () => {
     body = insertVessel(body, {}, { at: { vessel: "feet", side: "left" }, id: "ring-a" }).body;
     body = insertVessel(body, {}, { at: { vessel: "ring-a", side: "bottom" }, id: "ring-b" }).body;
     body = insertVessel(body, {}, { at: { vessel: "ring-b", side: "right" }, id: "ring-c" }).body;
-    body = connect(body, { vessel: "ring-c", side: "top" }, { vessel: "feet", side: "bottom" });
+    body = connect(body, { vessel: "ring-c", side: "top" }, { vessel: "feet", side: "bottom" }).body;
 
     expect(canDisconnect(body, { vessel: "feet", side: "left" })).toBe(true);
     expect(canDisconnect(body, { vessel: "ring-b", side: "top" })).toBe(true);

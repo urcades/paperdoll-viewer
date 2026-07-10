@@ -227,7 +227,5 @@ function coerceSize(value: number, min: number, max: number): number {
 }
 
 function formatObject(value: unknown): string {
-  return JSON.stringify(value, null, 2)
-    .replace(/"([A-Za-z_$][\w$]*)":/g, "$1:")
-    .replace(/"paper-doll\/v2"/g, '"paper-doll/v2"');
+  return JSON.stringify(value, null, 2).replace(/"([A-Za-z_$][\w$]*)":/g, "$1:");
 }

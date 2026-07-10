@@ -175,7 +175,7 @@
     if (!drag.targets.has(endpointKey(target))) return;
 
     try {
-      const nextBody = connect(body, drag.from, target);
+      const { body: nextBody } = connect(body, drag.from, target);
       onMutate(nextBody, {
         select: { kind: "vessel", id: drag.from.vessel },
         status: `Connected ${drag.from.vessel} to ${target.vessel}`
@@ -201,7 +201,7 @@
     try {
       const neighborId = findAdjacentVessel(vesselId, side);
       if (neighborId && !body.vessels[vesselId].ports?.[side]) {
-        const nextBody = connect(
+        const { body: nextBody } = connect(
           body,
           { vessel: vesselId, side },
           { vessel: neighborId, side: OPPOSITE_SIDES[side] }

@@ -171,7 +171,7 @@ export function replaceBodyAtPath(root: Body, path: BodyPath, next: Body): Body 
 
 export function canDisconnect(body: Body, endpoint: Endpoint): boolean {
   try {
-    const next = disconnect(body, endpoint);
+    const { body: next } = disconnect(body, endpoint);
     return validateDocument({ protocol: PAPER_DOLL_PROTOCOL, body: next }).length === 0;
   } catch {
     return false;
@@ -187,7 +187,7 @@ export function legalConnectTargets(body: Body, from: Endpoint): Endpoint[] {
     if (vesselId === from.vessel) continue;
     if (body.vessels[vesselId].ports?.[side]) continue;
     try {
-      const next = connect(body, from, { vessel: vesselId, side });
+      const { body: next } = connect(body, from, { vessel: vesselId, side });
       if (validateDocument({ protocol: PAPER_DOLL_PROTOCOL, body: next }).length === 0) {
         targets.push({ vessel: vesselId, side });
       }

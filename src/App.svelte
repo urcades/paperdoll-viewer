@@ -301,7 +301,7 @@
 
       if (selection.target.kind === "connection") {
         const { from, to } = selection.target;
-        const nextBody = disconnect(body, from);
+        const { body: nextBody } = disconnect(body, from);
         commitBodyAt(selection.path, nextBody, {
           select: { kind: "vessel", id: from.vessel },
           status: `Severed ${from.vessel} ↔ ${to.vessel}`
@@ -313,10 +313,13 @@
         throw new Error(`Cannot delete root ${selection.target.id}`);
       }
 
-      const nextBody = deleteVessel(body, selection.target.id, { collapseOppositeNeighbors: true });
+      const deletedId = selection.target.id;
+      const { body: nextBody, collapsed } = deleteVessel(body, deletedId, { collapseOppositeNeighbors: true });
       commitBodyAt(selection.path, nextBody, {
         select: { kind: "vessel", id: nextBody.root },
-        status: "Deleted node"
+        status: collapsed
+          ? `Deleted ${deletedId}, bridged ${collapsed.from.vessel} ↔ ${collapsed.to.vessel}`
+          : `Deleted ${deletedId}`
       });
     } catch (error) {
       setErrorStatus(error);

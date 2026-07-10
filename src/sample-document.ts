@@ -42,17 +42,17 @@ const BACKPACK_BODY: PaperDollDocument["body"] = {
   vessels: {
     "top-pocket": {
       accepts: accepts("tool"),
-      contains: [item("tool", "Compass")],
+      contains: [item("tool", "compass")],
       ports: { bottom: { vessel: "pack-shell", side: "top" } }
     },
     "left-pouch": {
       accepts: accepts("supply"),
-      contains: [item("supply", "Bandage roll")],
+      contains: [item("supply", "bandage-roll")],
       ports: { right: { vessel: "pack-shell", side: "left" } }
     },
     "pack-shell": {
       accepts: accepts("storage"),
-      contains: [item("storage", "Folded tarp")],
+      contains: [item("storage", "folded-tarp")],
       ports: {
         top: { vessel: "top-pocket", side: "bottom" },
         left: { vessel: "left-pouch", side: "right" },
@@ -62,21 +62,21 @@ const BACKPACK_BODY: PaperDollDocument["body"] = {
     },
     "right-pouch": {
       accepts: accepts("supply"),
-      contains: [item("supply", "Lamp oil")],
+      contains: [item("supply", "lamp-oil")],
       ports: { left: { vessel: "pack-shell", side: "right" } }
     },
     bedroll: {
       accepts: accepts("camp"),
-      contains: [item("camp", "Bedroll")],
+      contains: [item("camp", "bedroll")],
       ports: { top: { vessel: "pack-shell", side: "bottom" } }
     },
     "loose-ration": {
       accepts: accepts("food"),
-      contains: [item("food", "Hard biscuit")],
+      contains: [item("food", "hard-biscuit")],
     },
     "loose-charm": {
       accepts: accepts("trinket"),
-      contains: [item("trinket", "Copper charm")],
+      contains: [item("trinket", "copper-charm")],
     }
   }
 };
@@ -86,12 +86,12 @@ const DRONE_BODY: PaperDollDocument["body"] = {
   vessels: {
     rotor: {
       accepts: accepts("rotor"),
-      contains: [item("rotor", "Twin blades")],
+      contains: [item("rotor", "twin-blades")],
       ports: { bottom: { vessel: "drone-core", side: "top" } }
     },
     "drone-core": {
       accepts: accepts("battery"),
-      contains: [item("battery", "Charge cell")],
+      contains: [item("battery", "charge-cell")],
       ports: {
         top: { vessel: "rotor", side: "bottom" },
         bottom: { vessel: "sling", side: "top" }
@@ -107,18 +107,18 @@ const DRONE_BODY: PaperDollDocument["body"] = {
 // The item pool: a free vessel with open `accepts`, rendered as the play-mode
 // panel instead of a canvas node. Everything in it moves via moveElement.
 const HUMANOID_POOL = [
-  item("head", "Iron circlet"),
-  item("missile", "Bolt case"),
-  item("weapon", "Boarding axe"),
-  item("food", "Trail rations"),
-  { kind: "curio", id: "Weird idol" },
+  item("head", "iron-circlet"),
+  item("missile", "bolt-case"),
+  item("weapon", "boarding-axe"),
+  item("food", "trail-rations"),
+  { kind: "curio", id: "weird-idol" },
   {
     kind: "item",
     type: "tool",
-    id: "Field kit",
+    id: "field-kit",
     data: { weight: 3, notes: "Sealed against rain" }
   },
-  bodyItem("body", "Message drone", DRONE_BODY)
+  bodyItem("body", "message-drone", DRONE_BODY)
 ];
 
 const HUMANOID_DOCUMENT: PaperDollDocument = {
@@ -131,12 +131,12 @@ const HUMANOID_DOCUMENT: PaperDollDocument = {
       },
       face: {
         accepts: accepts("face"),
-        contains: [item("face", "Goggles")],
+        contains: [item("face", "goggles")],
         ports: { bottom: { vessel: "head", side: "top" } }
       },
       head: {
         accepts: accepts("head"),
-        contains: [item("head", "Salve hood")],
+        contains: [item("head", "salve-hood")],
         ports: {
           top: { vessel: "face", side: "bottom" },
           bottom: { vessel: "body", side: "top" }
@@ -148,7 +148,7 @@ const HUMANOID_DOCUMENT: PaperDollDocument = {
       },
       "left-hand": {
         accepts: accepts("weapon", "tool"),
-        contains: [item("weapon", "Steel dagger")],
+        contains: [item("weapon", "steel-dagger")],
         ports: {
           left: { vessel: "hands-worn", side: "right" },
           right: { vessel: "left-arm", side: "left" }
@@ -163,7 +163,7 @@ const HUMANOID_DOCUMENT: PaperDollDocument = {
       },
       body: {
         accepts: accepts("body"),
-        contains: [item("body", "Wet recycling suit")],
+        contains: [item("body", "wet-recycling-suit")],
         ports: {
           top: { vessel: "head", side: "bottom" },
           left: { vessel: "left-arm", side: "right" },
@@ -180,12 +180,12 @@ const HUMANOID_DOCUMENT: PaperDollDocument = {
       },
       "right-hand": {
         accepts: accepts("weapon", "tool"),
-        contains: [item("tool", "Torch")],
+        contains: [item("tool", "torch")],
         ports: { left: { vessel: "right-arm", side: "right" } }
       },
       back: {
         accepts: accepts("back", "body"),
-        contains: [bodyItem("body", "Nested backpack", BACKPACK_BODY)],
+        contains: [bodyItem("body", "nested-backpack", BACKPACK_BODY)],
         ports: {
           top: { vessel: "body", side: "bottom" },
           bottom: { vessel: "feet", side: "top" }
@@ -193,7 +193,7 @@ const HUMANOID_DOCUMENT: PaperDollDocument = {
       },
       feet: {
         accepts: accepts("feet"),
-        contains: [item("feet", "Leather moccasins")],
+        contains: [item("feet", "leather-moccasins")],
         ports: {
           top: { vessel: "back", side: "bottom" },
           right: { vessel: "missile-left", side: "left" }
@@ -201,7 +201,7 @@ const HUMANOID_DOCUMENT: PaperDollDocument = {
       },
       "missile-left": {
         accepts: accepts("missile"),
-        contains: [item("missile", "Short bow")],
+        contains: [item("missile", "short-bow")],
         ports: {
           left: { vessel: "feet", side: "right" },
           right: { vessel: "missile-right", side: "left" }
@@ -209,7 +209,7 @@ const HUMANOID_DOCUMENT: PaperDollDocument = {
       },
       "missile-right": {
         accepts: accepts("missile"),
-        contains: [item("missile", "Quiver")],
+        contains: [item("missile", "quiver")],
         ports: { left: { vessel: "missile-left", side: "right" } }
       },
       floating: {
@@ -229,12 +229,12 @@ const MECH_DOCUMENT: PaperDollDocument = {
     vessels: {
       sensors: {
         accepts: accepts("sensor"),
-        contains: [item("sensor", "Rangefinder")],
+        contains: [item("sensor", "rangefinder")],
         ports: { bottom: { vessel: "cockpit", side: "top" } }
       },
       cockpit: {
         accepts: accepts("pilot"),
-        contains: [item("pilot", "Operator cradle")],
+        contains: [item("pilot", "operator-cradle")],
         ports: {
           top: { vessel: "sensors", side: "bottom" },
           bottom: { vessel: "core", side: "top" }
@@ -242,7 +242,7 @@ const MECH_DOCUMENT: PaperDollDocument = {
       },
       core: {
         accepts: accepts("reactor"),
-        contains: [item("reactor", "Compact cell")],
+        contains: [item("reactor", "compact-cell")],
         ports: {
           top: { vessel: "cockpit", side: "bottom" },
           left: { vessel: "left-shoulder", side: "right" },
@@ -259,7 +259,7 @@ const MECH_DOCUMENT: PaperDollDocument = {
       },
       "left-cannon": {
         accepts: accepts("weapon"),
-        contains: [item("weapon", "Rail lance")],
+        contains: [item("weapon", "rail-lance")],
         ports: { right: { vessel: "left-shoulder", side: "left" } }
       },
       "right-shoulder": {
@@ -271,7 +271,7 @@ const MECH_DOCUMENT: PaperDollDocument = {
       },
       "right-claw": {
         accepts: accepts("tool"),
-        contains: [item("tool", "Manipulator")],
+        contains: [item("tool", "manipulator")],
         ports: { left: { vessel: "right-shoulder", side: "right" } }
       },
       hips: {
@@ -285,17 +285,17 @@ const MECH_DOCUMENT: PaperDollDocument = {
       },
       "left-leg": {
         accepts: accepts("leg"),
-        contains: [item("leg", "Hydraulic strider")],
+        contains: [item("leg", "hydraulic-strider")],
         ports: { right: { vessel: "hips", side: "left" } }
       },
       "right-leg": {
         accepts: accepts("leg"),
-        contains: [item("leg", "Hydraulic strider")],
+        contains: [item("leg", "hydraulic-strider")],
         ports: { left: { vessel: "hips", side: "right" } }
       },
       stabilizer: {
         accepts: accepts("anchor"),
-        contains: [item("anchor", "Gyro foot")],
+        contains: [item("anchor", "gyro-foot")],
         ports: { top: { vessel: "hips", side: "bottom" } }
       }
     }
@@ -323,12 +323,12 @@ const VEHICLE_DOCUMENT: PaperDollDocument = {
     vessels: {
       roof: {
         accepts: accepts("cargo"),
-        contains: [item("cargo", "Roof rack")],
+        contains: [item("cargo", "roof-rack")],
         ports: { bottom: { vessel: "cabin", side: "top" } }
       },
       cabin: {
         accepts: accepts("crew"),
-        contains: [item("crew", "Driver bench")],
+        contains: [item("crew", "driver-bench")],
         ports: {
           top: { vessel: "roof", side: "bottom" },
           bottom: { vessel: "chassis", side: "top" }
@@ -336,12 +336,12 @@ const VEHICLE_DOCUMENT: PaperDollDocument = {
       },
       "front-axle": {
         accepts: accepts("wheel"),
-        contains: [item("wheel", "Front axle")],
+        contains: [item("wheel", "front-axle")],
         ports: { right: { vessel: "chassis", side: "left" } }
       },
       chassis: {
         accepts: accepts("frame"),
-        contains: [item("frame", "Utility chassis")],
+        contains: [item("frame", "utility-chassis")],
         ports: {
           top: { vessel: "cabin", side: "bottom" },
           left: { vessel: "front-axle", side: "right" },
@@ -351,7 +351,7 @@ const VEHICLE_DOCUMENT: PaperDollDocument = {
       },
       "rear-axle": {
         accepts: accepts("wheel"),
-        contains: [item("wheel", "Rear axle")],
+        contains: [item("wheel", "rear-axle")],
         ports: {
           left: { vessel: "chassis", side: "right" },
           right: { vessel: "tow-hitch", side: "left" }
@@ -359,12 +359,12 @@ const VEHICLE_DOCUMENT: PaperDollDocument = {
       },
       "tow-hitch": {
         accepts: accepts("trailer"),
-        contains: [item("trailer", "Tow hook")],
+        contains: [item("trailer", "tow-hook")],
         ports: { left: { vessel: "rear-axle", side: "right" } }
       },
       battery: {
         accepts: accepts("power"),
-        contains: [item("power", "Battery tray")],
+        contains: [item("power", "battery-tray")],
         ports: { top: { vessel: "chassis", side: "bottom" } }
       }
     }
@@ -388,17 +388,17 @@ const SATELLITE_DOCUMENT: PaperDollDocument = {
     vessels: {
       antenna: {
         accepts: accepts("signal"),
-        contains: [item("signal", "High-gain dish")],
+        contains: [item("signal", "high-gain-dish")],
         ports: { bottom: { vessel: "bus", side: "top" } }
       },
       "left-panel": {
         accepts: accepts("solar"),
-        contains: [item("solar", "Port array")],
+        contains: [item("solar", "port-array")],
         ports: { right: { vessel: "bus", side: "left" } }
       },
       bus: {
         accepts: accepts("payload"),
-        contains: [item("payload", "Instrument bus")],
+        contains: [item("payload", "instrument-bus")],
         ports: {
           top: { vessel: "antenna", side: "bottom" },
           left: { vessel: "left-panel", side: "right" },
@@ -408,12 +408,12 @@ const SATELLITE_DOCUMENT: PaperDollDocument = {
       },
       "right-panel": {
         accepts: accepts("solar"),
-        contains: [item("solar", "Starboard array")],
+        contains: [item("solar", "starboard-array")],
         ports: { left: { vessel: "bus", side: "right" } }
       },
       thruster: {
         accepts: accepts("propulsion"),
-        contains: [item("propulsion", "Ion thruster")],
+        contains: [item("propulsion", "ion-thruster")],
         ports: {
           top: { vessel: "bus", side: "bottom" },
           bottom: { vessel: "probe", side: "top" }
@@ -421,7 +421,7 @@ const SATELLITE_DOCUMENT: PaperDollDocument = {
       },
       probe: {
         accepts: accepts("sensor"),
-        contains: [item("sensor", "Dust sampler")],
+        contains: [item("sensor", "dust-sampler")],
         ports: { top: { vessel: "thruster", side: "bottom" } }
       }
     }

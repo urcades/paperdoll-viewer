@@ -33,8 +33,8 @@ importers:
         specifier: ^1.2.3
         version: 1.2.3
       paperdoll:
-        specifier: ^0.6.0
-        version: 0.6.0
+        specifier: ^0.8.1
+        version: 0.8.1
       svelte:
         specifier: ^5.56.4
         version: 5.56.4
@@ -576,8 +576,8 @@ packages:
     resolution: {integrity: sha512-9miFgM2OFba7hB+pRgvtV84pYTBaoTHohvmIgiRt6dRIzbwEOIaNaP+dIlGs2fNFoB0SeISs0Jz5WFVRid6Xyg==}
     engines: {node: '>=12.20.0'}
 
-  paperdoll@0.6.0:
-    resolution: {integrity: sha512-XO+rTQapyuamAvkbK6Xi1tAIMzkceSAw5YrugW/bCaooKnoX5R1jrfjyPU6+rPCtvUj0T1j6O+BzfSb82prlsg==}
+  paperdoll@0.8.1:
+    resolution: {integrity: sha512-h6I3xruhhkRyDDTKki/cKC6VSu3dWu34NVqHNWKhIX33mZ8hHae5WtHxc+bmn3pcMo2VV7mPigWRuDv1WZloTQ==}
     engines: {node: '>=18'}
 
   parse5@8.0.1:
@@ -1286,7 +1286,7 @@ snapshots:
 
   obug@2.1.3: {}
 
-  paperdoll@0.6.0: {}
+  paperdoll@0.8.1: {}
 
   parse5@8.0.1:
     dependencies:
