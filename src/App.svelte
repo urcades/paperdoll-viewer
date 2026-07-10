@@ -25,8 +25,14 @@
     type VesselPresentation
   } from "./sample-document";
   import { formatSceneSource, getSceneNodeRanges, parseSceneSource } from "./construction-source";
-  import { applyPatch, canonicalizeBody, diffBodies, invertPatch } from "paperfold";
-  import { History, type AppliedStep, type BodyStep, type HistoryTag } from "./history.svelte";
+  import {
+    applyScenePatch,
+    canonicalizeScene,
+    diffScenes,
+    invertScenePatch,
+    type ScenePatchDocument
+  } from "paperfold";
+  import { History, type HistoryTag } from "./history.svelte";
   import { assertApplied, snapshotBody } from "./protocol.svelte";
   import { advanceTick, applyStrike, bleedRate, deriveCondition, hasCombatLayers, healAll, WEAPONS } from "./combat";
   import { derivePowerStatus, hasPower, propagatePower } from "./power";
@@ -41,7 +47,6 @@
   } from "./workbench";
   import {
     addRelation,
-    applySceneOps,
     figureBodyNames,
     getBodyAtSceneAddress,
     POOL_BODY,
@@ -55,7 +60,6 @@
     type Scene
   } from "./scene";
   import RelationsPanel from "./RelationsPanel.svelte";
-  import type { SceneOp } from "./history.svelte";
 
   type Pan = {
     x: number;
@@ -405,43 +409,45 @@
     const toPrev = snapshotBody(scene.bodies[toName]);
     const inserted = insertElement(toPrev, target.vessel, removal.element);
 
-    const fromPatch = assertApplied(diffBodies(fromPrev, removal.body));
-    const toPatch = assertApplied(diffBodies(toPrev, inserted));
-    const fromApplied = assertApplied(applyPatch(fromPrev, fromPatch));
-    const toApplied = assertApplied(applyPatch(toPrev, toPatch));
-
     const label = `Moved ${describeElement(drag.element)} to ${toName === POOL_BODY ? "the pool" : target.vessel}`;
-    let nextScene = replaceBodyInScene(snapshotScene(), fromName, fromApplied);
-    nextScene = replaceBodyInScene(nextScene, toName, toApplied);
-    commitEntry(
+    let nextScene = replaceBodyInScene(snapshotScene(), fromName, removal.body);
+    nextScene = replaceBodyInScene(nextScene, toName, inserted);
+    commitCandidate(
       nextScene,
-      [
-        { bodyName: fromName, patch: fromPatch, inverse: invertPatch(fromPatch) },
-        { bodyName: toName, patch: toPatch, inverse: invertPatch(toPatch) }
-      ],
       toName === POOL_BODY ? selection : { address: toName, target: { kind: "vessel", id: target.vessel } },
       { status: label }
     );
   }
 
-  // Push a history entry and commit, pruning relations whose endpoints no
-  // longer hold (deleted vessels, severed limbs, transferred elements). The
-  // removals ride the same entry as scene ops, so undo restores them.
-  function commitEntry(nextScene: Scene, steps: BodyStep[], nextSelection: Selection | null, meta: MutationMeta): void {
-    const pruned = pruneDanglingRelations(nextScene);
-    const sceneOps: SceneOp[] = pruned.removed.map((relation) => ({ op: "removeRelation", relation }));
+  // The single funnel tail for every mutation: prune relations whose
+  // endpoints no longer hold (deleted vessels, severed limbs, transferred
+  // elements) so the removals become ordinary removeRelation entries, diff
+  // the whole scene into ONE invertible paperfold/v2 patch — cross-body
+  // transfers and relation edits included — apply it (which validates every
+  // scene law and canonicalizes), and record it.
+  function commitCandidate(candidate: Scene, nextSelection: Selection | null, meta: MutationMeta): void {
+    const prevScene = snapshotScene();
+    const pruned = pruneDanglingRelations(candidate);
     const label =
       pruned.removed.length > 0
         ? `${meta.status} — ${pruned.removed.map((relation) => `${relation.kind} ${relation.from} → ${relation.to}`).join(", ")} dropped`
         : meta.status;
+    const patch = assertApplied(diffScenes(prevScene, pruned.scene));
+    if (patch.patch.length === 0) {
+      // No-op commit (e.g. a power pulse with nothing left to drain): update
+      // the status line without polluting history.
+      status = label;
+      return;
+    }
+    const applied = assertApplied(applyScenePatch(prevScene, patch));
     history.push({
-      steps,
-      sceneOps,
+      patch,
+      inverse: invertScenePatch(patch),
       label,
       tag: meta.tag ?? "construct",
       runId: meta.runId ?? null
     });
-    commitScene(pruned.scene, presentation, viewControls, nextSelection, label, true);
+    commitScene(applied, presentation, viewControls, nextSelection, label, true);
   }
 
   // In a versus scene the selected figure is the target and the other figure
@@ -591,25 +597,16 @@
   }
 
   // The commit funnel. Callers hand over a candidate next body for a scene
-  // address; the funnel lifts nested edits to that body's root, diffs, and
-  // commits paperfold's canonical applied body back into the scene. Every
-  // mutation lands as a recorded, invertible patch tagged with its body.
+  // address; the funnel lifts nested edits to that body's root, swaps it
+  // into a candidate scene, and commitCandidate turns the whole change into
+  // one invertible paperfold/v2 scene patch.
   function commitBodyAt(sceneAddress: string, nextBody: Body, meta: MutationMeta): void {
     try {
       const { bodyName, address } = splitSceneAddress(sceneAddress);
       const prevBody = snapshotBody(scene.bodies[bodyName]);
       const nextRoot = replaceBodyAtAddress(prevBody, address, snapshotBody(nextBody));
-      const patch = assertApplied(diffBodies(prevBody, nextRoot));
-      if (patch.patch.length === 0) {
-        // No-op commit (e.g. a power pulse with nothing left to drain): update
-        // the status line without polluting history.
-        status = meta.status;
-        return;
-      }
-      const applied = assertApplied(applyPatch(prevBody, patch));
-      commitEntry(
-        replaceBodyInScene(snapshotScene(), bodyName, applied),
-        [{ bodyName, patch, inverse: invertPatch(patch) }],
+      commitCandidate(
+        replaceBodyInScene(snapshotScene(), bodyName, nextRoot),
         meta.select ? { address: sceneAddress, target: meta.select } : selection,
         meta
       );
@@ -618,19 +615,13 @@
     }
   }
 
-  // Relation edits are scene-level ops paperfold can't express; they get
-  // their own history entries with the opposite op as inverse.
+  // Relation edits go through the same funnel — the diff emits the
+  // addRelation/removeRelation entries.
   function handleAddRelation(relation: Relation): void {
     try {
-      const next = addRelation(snapshotScene(), relation);
-      history.push({
-        steps: [],
-        sceneOps: [{ op: "addRelation", relation }],
-        label: `Related ${relation.from} ${relation.kind} ${relation.to}`,
-        tag: "construct",
-        runId: null
+      commitCandidate(addRelation(snapshotScene(), relation), selection, {
+        status: `Related ${relation.from} ${relation.kind} ${relation.to}`
       });
-      commitScene(next, presentation, viewControls, selection, `Related ${relation.from} ${relation.kind} ${relation.to}`, true);
     } catch (error) {
       setErrorStatus(error);
     }
@@ -638,15 +629,9 @@
 
   function handleRemoveRelation(relation: Relation): void {
     try {
-      const { scene: next } = removeRelation(snapshotScene(), relation);
-      history.push({
-        steps: [],
-        sceneOps: [{ op: "removeRelation", relation }],
-        label: `Unrelated ${relation.from} ${relation.kind} ${relation.to}`,
-        tag: "construct",
-        runId: null
+      commitCandidate(removeRelation(snapshotScene(), relation).scene, selection, {
+        status: `Unrelated ${relation.from} ${relation.kind} ${relation.to}`
       });
-      commitScene(next, presentation, viewControls, selection, `Unrelated ${relation.from} ${relation.kind} ${relation.to}`, true);
     } catch (error) {
       setErrorStatus(error);
     }
@@ -655,28 +640,20 @@
   // Undo/redo re-apply recorded patches without pushing new entries. Timers
   // stop first so a sim run can't race a rewind.
   function undo(): void {
-    applySteps(history.undo(), "Undid");
+    applyHistoryPatch(history.undo(), "Undid");
   }
 
   function redo(): void {
-    applySteps(history.redo(), "Redid");
+    applyHistoryPatch(history.redo(), "Redid");
   }
 
-  function applySteps(
-    result: { label: string; steps: AppliedStep[]; sceneOps: SceneOp[] } | null,
-    verb: string
-  ): void {
+  function applyHistoryPatch(result: { label: string; patch: ScenePatchDocument } | null, verb: string): void {
     if (!result) return;
     try {
       stopBleed();
       stopRun();
-      let nextScene = snapshotScene();
-      for (const step of result.steps) {
-        const applied = assertApplied(applyPatch(nextScene.bodies[step.bodyName], step.patch));
-        nextScene = replaceBodyInScene(nextScene, step.bodyName, applied);
-      }
-      nextScene = applySceneOps(nextScene, result.sceneOps);
-      commitScene(nextScene, presentation, viewControls, selection, `${verb}: ${result.label}`, true);
+      const applied = assertApplied(applyScenePatch(snapshotScene(), result.patch));
+      commitScene(applied, presentation, viewControls, selection, `${verb}: ${result.label}`, true);
     } catch (error) {
       setErrorStatus(error);
     }
@@ -686,16 +663,11 @@
     try {
       stopBleed();
       stopRun();
-      const seek = history.seekTo(index);
-      if (!seek) return;
-      let nextScene = snapshotScene();
-      for (const step of seek.steps) {
-        const applied = assertApplied(applyPatch(nextScene.bodies[step.bodyName], step.patch));
-        nextScene = replaceBodyInScene(nextScene, step.bodyName, applied);
-      }
-      nextScene = applySceneOps(nextScene, seek.sceneOps);
+      const patch = history.seekTo(index);
+      if (!patch) return;
+      const applied = assertApplied(applyScenePatch(snapshotScene(), patch));
       commitScene(
-        nextScene,
+        applied,
         presentation,
         viewControls,
         selection,
@@ -883,15 +855,6 @@
     );
 
     return matchingPreset?.id ?? null;
-  }
-
-  function canonicalizeScene(input: Scene): Scene {
-    return {
-      ...input,
-      bodies: Object.fromEntries(
-        Object.entries(input.bodies).map(([name, body]) => [name, canonicalizeBody(body)])
-      )
-    };
   }
 
   const presetOptions = SCENE_PRESETS.map((preset) => ({ id: preset.id, name: preset.name }));

@@ -20,16 +20,17 @@ build, and docs/postmortem.md for the family migration and protocol notes.
   figure. Figure bodies each render a canvas; addresses are scene addresses
   (`"main"`, `"pool"`, `"main/back/nested-backpack"`) split by
   `splitSceneAddress` in `src/scene.ts`.
-- **Every mutation flows through App's commit funnel** (`commitBodyAt` →
-  lift via `replaceBodyAtAddress` → `diffBodies` → `applyPatch` →
-  `commitEntry`/`commitScene`), which records an invertible paperfold patch
-  per touched body, prunes dangling relations, validates the scene,
-  reconciles selection/windows, and rewrites the editor source. Don't mutate
-  the scene anywhere else.
-- **History is patches** (`src/history.svelte.ts`): entries carry
-  `BodyStep[]` (patch+inverse per body) plus `sceneOps` for relation edits
-  paperfold can't express. Undo/redo/seek apply through the same funnel tail
-  without pushing. Preset swaps and source-panel commits are history
+- **Every mutation flows through App's commit funnel**: callers build a
+  candidate scene (nested edits lifted via `replaceBodyAtAddress`), then
+  `commitCandidate` prunes dangling relations, `diffScenes` the whole change
+  into ONE paperfold/v2 scene patch, `applyScenePatch`es it (validating all
+  scene laws + canonicalizing), records it, and runs the `commitScene` tail.
+  Don't mutate the scene anywhere else.
+- **History is scene patches — one currency** (`src/history.svelte.ts`):
+  each entry is `{patch, inverse}` of a `ScenePatchDocument`; cross-body
+  transfers and relation edits are ordinary entries. Undo/redo/seek apply
+  through the same funnel tail without pushing; `seekTo` composes with
+  `composeScenePatches`. Preset swaps and source-panel commits are history
   barriers. Sim ticks commit with `tag: "sim"` and a `runId`.
 - **The UI only offers legal moves.** Kernel legality = trial-apply the op +
   `validateDocument`; relation legality = trial `addRelation` +
@@ -45,7 +46,10 @@ build, and docs/postmortem.md for the family migration and protocol notes.
   App.svelte); `healAll` removes it. Profiles live in `src/profiles.ts`.
 - **Relation liveness is app policy**: `pruneDanglingRelations` (scene.ts)
   drops relations whose endpoints no longer resolve or sit on severed
-  (unreachable-from-root) vessels, recorded as sceneOps in the same entry.
+  (unreachable-from-root) vessels — applied to the candidate scene *before*
+  the diff, so the removals are ordinary `removeRelation` entries in the
+  same patch (paperfold v2's strict-dangling law would reject the commit
+  otherwise).
 - **Law 8**: element ids are lowercase slugs, unique per vessel. Give fungible
   elements (conduits etc.) vessel-scoped ids or drags will collide.
 - Kernel ops return what they removed (`{body, ...}`) — always destructure —

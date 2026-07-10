@@ -39,8 +39,8 @@ importers:
         specifier: ^0.8.2
         version: 0.8.2
       paperfold:
-        specifier: ^0.1.0
-        version: 0.1.0
+        specifier: file:../paperfold
+        version: file:../paperfold
       papermold:
         specifier: ^0.1.0
         version: 0.1.0
@@ -593,8 +593,8 @@ packages:
     resolution: {integrity: sha512-im3nDSU8YCv6CEJGlW70aFXYE36FdrIxiV2MUdzJ86OM2dHt31ZZqTyif/mdQo3mrreFD0OG+gReufW/7o+THw==}
     engines: {node: '>=18'}
 
-  paperfold@0.1.0:
-    resolution: {integrity: sha512-TkcHhGSk3cBZRHRICVOA2/EA73IYPTEZz2fGMNwX1gwozT/MnP37N8ZV3BFlb2OU4ppKfmNciGhJLFwRwCHIQQ==}
+  paperfold@file:../paperfold:
+    resolution: {directory: ../paperfold, type: directory}
     engines: {node: '>=18'}
 
   papermold@0.1.0:
@@ -1313,8 +1313,9 @@ snapshots:
 
   paperdoll@0.8.2: {}
 
-  paperfold@0.1.0:
+  paperfold@file:../paperfold:
     dependencies:
+      paperchain: 0.1.0
       paperdoll: 0.8.2
 
   papermold@0.1.0:

@@ -19,7 +19,6 @@ import {
   type Scene
 } from "paperchain";
 import { getBodyAtAddress, reachableVessels } from "./workbench";
-import type { SceneOp } from "./history.svelte";
 
 export const MAIN_BODY = "main";
 export const POOL_BODY = "pool";
@@ -55,18 +54,6 @@ export function makeScene(bodies: Record<string, Body>): Scene {
 /** Names of bodies that render as figure canvases (everything but the pool). */
 export function figureBodyNames(scene: Scene): string[] {
   return Object.keys(scene.bodies).filter((name) => name !== POOL_BODY);
-}
-
-/** Apply recorded scene ops (relation add/removes) through paperchain. */
-export function applySceneOps(scene: Scene, sceneOps: SceneOp[]): Scene {
-  let next = scene;
-  for (const sceneOp of sceneOps) {
-    next =
-      sceneOp.op === "addRelation"
-        ? addRelation(next, sceneOp.relation)
-        : removeRelation(next, sceneOp.relation).scene;
-  }
-  return next;
 }
 
 /**

@@ -92,7 +92,7 @@ Canvas interactions:
 | --- | --- |
 | `src/App.svelte` | Scene owner; the commit funnel (lift → `diffBodies` → `applyPatch` → prune relations → validate scene → derive → rewrite source); selection, windows, drags, tick loops, strike targeting |
 | `src/scene.ts` | Scene addresses, body replacement, `pruneDanglingRelations` (relation-liveness policy) |
-| `src/history.svelte.ts` | Patch-based history: `BodyStep[]` + relation `sceneOps` per entry; undo/redo/`seekTo` (composed scrubbing) |
+| `src/history.svelte.ts` | Scene-patch history (paperfold/v2, one currency): `{patch, inverse}` per entry; undo/redo/`seekTo` (composed scrubbing) |
 | `src/protocol.svelte.ts` | The wrapper boundary: `snapshotBody`, `validateBody`, `assertApplied` |
 | `src/profiles.ts` | papermold profiles, `judgeAll`, the `DEAD_STATUS` reification marker |
 | `src/BodyCanvas.svelte` | Depth-agnostic canvas core (render, select, handles, connect-drag) — same component per figure body and inside windows |

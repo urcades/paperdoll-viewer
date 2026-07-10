@@ -190,3 +190,30 @@ The characterization oracle (`src/characterization.test.ts`, 21 pins written
 before any refactor) never changed and never failed — the observable combat,
 power, bleeding, and round-trip behavior of the original demo is byte-stable
 across the entire migration.
+
+## Addendum (same day): proposals #1 and #2 shipped as paperfold 0.2.0
+
+Hours after this postmortem was written, its top two proposals were
+implemented in the paperfold repo and this app re-migrated as the proving
+consumer. `paperfold/v2` documents patch **scenes**: kernel entries gain a
+`body` name and an optional `path` into embedded bodies (proposal #1), and
+six new entries reify paperchain's operation set with destruction records
+(proposal #2) — `removeRelation`'s relation doubles as its own record in
+stored orientation, and strict dangling is enforced by the final
+`validateScene`, making "the rope drops as part of the severing" a protocol
+law rather than app policy.
+
+What that deleted here: the **two-currency ledger is gone** — `BodyStep[]`
+and `SceneOp` no longer exist; a history entry is one `{patch, inverse}`
+pair, and `seekTo` is a single `composeScenePatches` fold. The funnel
+collapsed from three special-cased paths (per-body commits, two-patch
+cross-body transfers, hand-inverted relation ops) into one:
+build candidate scene → prune → `diffScenes` → `applyScenePatch` → record.
+`pruneDanglingRelations` survives as app *policy* (severed-but-resolvable
+endpoints), but its removals are now ordinary patch entries restored by the
+ordinary inverse. Severing the wielding arm is one patch carrying both the
+disconnects and the `removeRelation`; one undo restores both — verified in
+tests and in the browser.
+
+Proposals #3–#6 remain open; #3 (papermold over scenes) is now the natural
+next step, since change and judgment finally share the same substrate.

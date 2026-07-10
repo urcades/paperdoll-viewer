@@ -1,6 +1,7 @@
-// Behavioral tests for the paperfold-backed history layer: the History store
-// itself, and the funnel sequence App.svelte performs on every commit
-// (lift nested edit → diffBodies → applyPatch, undo via invertPatch).
+// Behavioral tests for the paperfold/v2-backed history layer: the History
+// store itself, and the funnel sequence App.svelte performs on every commit
+// (lift nested edit → diffScenes → applyScenePatch, undo via
+// invertScenePatch) — one scene patch per entry, one currency.
 
 import { describe, expect, it } from "vitest";
 import {
@@ -13,7 +14,15 @@ import {
   parseDocument,
   type Body
 } from "paperdoll";
-import { applyPatch, canonicalizeBody, diffBodies, invertPatch, type PaperfoldDocument } from "paperfold";
+import {
+  applyScenePatch,
+  canonicalizeBody,
+  diffScenes,
+  invertScenePatch,
+  PAPERFOLD_SCENE_PROTOCOL,
+  type Scene,
+  type ScenePatchDocument
+} from "paperfold";
 import { applyStrike, WEAPONS } from "./combat";
 import { DEFAULT_DOCUMENT, PAPER_DOLL_PRESETS } from "./sample-document";
 import { replaceBodyAtAddress, replaceElementData, ROOT_ADDRESS } from "./workbench";
@@ -24,30 +33,30 @@ function assertOk<T>(result: { ok: true; value: T } | { ok: false; errors: unkno
   return result.value;
 }
 
+/** A one-figure scene around a bare body, as the app holds it. */
+function asScene(body: Body): Scene {
+  return { protocol: "paperchain/v1", bodies: { main: body }, kinds: {}, relations: [] };
+}
+
 /** The funnel sequence from App.svelte, minus Svelte state (one body, "main"). */
 function commitThrough(history: History, prevRoot: Body, address: string, nextBody: Body, label: string): Body {
   const nextRoot = replaceBodyAtAddress(prevRoot, address, nextBody);
-  const patch = assertOk(diffBodies(prevRoot, nextRoot));
-  const applied = assertOk(applyPatch(prevRoot, patch));
-  history.push({
-    steps: [{ bodyName: "main", patch, inverse: invertPatch(patch) }],
-    label,
-    tag: "construct",
-    runId: null
-  });
-  return applied;
+  const patch = assertOk(diffScenes(asScene(prevRoot), asScene(nextRoot)));
+  const applied = assertOk(applyScenePatch(asScene(prevRoot), patch));
+  history.push({ patch, inverse: invertScenePatch(patch), label, tag: "construct", runId: null });
+  return applied.bodies.main;
 }
 
 function undoOnto(history: History, body: Body): Body {
   const result = history.undo();
   if (!result) throw new Error("nothing to undo");
-  return result.steps.reduce((current, step) => assertOk(applyPatch(current, step.patch)), body);
+  return assertOk(applyScenePatch(asScene(body), result.patch)).bodies.main;
 }
 
 function redoOnto(history: History, body: Body): Body {
   const result = history.redo();
   if (!result) throw new Error("nothing to redo");
-  return result.steps.reduce((current, step) => assertOk(applyPatch(current, step.patch)), body);
+  return assertOk(applyScenePatch(asScene(body), result.patch)).bodies.main;
 }
 
 function clone(body: Body): Body {
@@ -55,9 +64,10 @@ function clone(body: Body): Body {
 }
 
 describe("history store", () => {
-  const emptyPatch: PaperfoldDocument = { protocol: "paperfold/v1", patch: [] };
+  const emptyPatch: ScenePatchDocument = { protocol: PAPERFOLD_SCENE_PROTOCOL, patch: [] };
   const entry = (label: string) => ({
-    steps: [{ bodyName: "main", patch: emptyPatch, inverse: emptyPatch }],
+    patch: emptyPatch,
+    inverse: emptyPatch,
     label,
     tag: "construct" as const,
     runId: null
@@ -206,7 +216,7 @@ describe("patch-based commit funnel", () => {
     const end = current;
 
     const applySeek = (body: Body, seek: ReturnType<History["seekTo"]>): Body =>
-      seek!.steps.reduce((acc, step) => assertOk(applyPatch(acc, step.patch)), body);
+      assertOk(applyScenePatch(asScene(body), seek!)).bodies.main;
 
     // Scrub to 0 restores the pre-strike body exactly.
     const back = history.seekTo(0);
@@ -233,7 +243,7 @@ describe("patch-based commit funnel", () => {
     let current = commitThrough(history, base, ROOT_ADDRESS, insertVessel(clone(base), {}, { id: "zone-a" }).body, "a");
     current = commitThrough(history, current, ROOT_ADDRESS, insertVessel(clone(current), {}, { id: "zone-b" }).body, "b");
 
-    current = history.seekTo(1)!.steps.reduce((acc, step) => assertOk(applyPatch(acc, step.patch)), current);
+    current = assertOk(applyScenePatch(asScene(current), history.seekTo(1)!)).bodies.main;
     expect(history.entries).toHaveLength(2);
 
     commitThrough(history, current, ROOT_ADDRESS, insertVessel(clone(current), {}, { id: "zone-c" }).body, "c");
@@ -247,7 +257,7 @@ describe("patch-based commit funnel", () => {
 
     const patches = [0, 1].map(() => {
       const struck = applyStrike(clone(base), "head", WEAPONS[0], () => 0.5).body;
-      return assertOk(diffBodies(base, struck));
+      return assertOk(diffScenes(asScene(base), asScene(struck)));
     });
     expect(patches[0]).toStrictEqual(patches[1]);
   });
@@ -266,15 +276,15 @@ describe("patch-based commit funnel", () => {
     }
     expect(severed).toBe(true);
 
-    const patch = assertOk(diffBodies(base, current));
-    const after = assertOk(applyPatch(base, patch));
-    const restored = assertOk(applyPatch(after, invertPatch(patch)));
-    expect(restored).toEqual(base);
+    const patch = assertOk(diffScenes(asScene(base), asScene(current)));
+    const after = assertOk(applyScenePatch(asScene(base), patch));
+    const restored = assertOk(applyScenePatch(after, invertScenePatch(patch)));
+    expect(restored.bodies.main).toEqual(base);
   });
 
   it("produces no patch entries for a no-op commit", () => {
     const base = canonicalizeBody(clone(DEFAULT_DOCUMENT.body));
-    const patch = assertOk(diffBodies(base, clone(base)));
+    const patch = assertOk(diffScenes(asScene(base), asScene(clone(base))));
     expect(patch.patch).toHaveLength(0);
   });
 });

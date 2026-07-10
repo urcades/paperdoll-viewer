@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { deleteVessel, insertElement, parseDocument, removeElement, type Body } from "paperdoll";
 import { parseScene, validateScene } from "paperchain";
-import { applyPatch, diffBodies, invertPatch } from "paperfold";
+import { applyScenePatch, diffScenes, invertScenePatch } from "paperfold";
 import { History } from "./history.svelte";
 import { SCENE_PRESETS } from "./sample-document";
 import { formatSceneSource, getSceneNodeRanges, parseSceneSource } from "./construction-source";
@@ -90,25 +90,18 @@ describe("cross-body transfers", () => {
     const history = new History();
     const before = [...elementMultiset(scene.bodies.main), ...elementMultiset(scene.bodies.pool)].sort();
 
-    // pool → figure (boarding-axe to left-hand), the App's transferElement sequence.
+    // pool → figure (boarding-axe to left-hand), the App's transferElement
+    // sequence: build the candidate scene, diff it into ONE scene patch.
     const transfer = (fromName: string, fromVessel: string, index: number, toName: string, toVessel: string) => {
       const fromPrev = structuredClone(scene.bodies[fromName]);
       const removal = removeElement(fromPrev, fromVessel, index);
       const toPrev = structuredClone(scene.bodies[toName]);
       const inserted = insertElement(toPrev, toVessel, removal.element);
-      const fromPatch = assertOk(diffBodies(fromPrev, removal.body));
-      const toPatch = assertOk(diffBodies(toPrev, inserted));
-      history.push({
-        steps: [
-          { bodyName: fromName, patch: fromPatch, inverse: invertPatch(fromPatch) },
-          { bodyName: toName, patch: toPatch, inverse: invertPatch(toPatch) }
-        ],
-        label: "transfer",
-        tag: "construct",
-        runId: null
-      });
-      scene = replaceBodyInScene(scene, fromName, assertOk(applyPatch(fromPrev, fromPatch)));
-      scene = replaceBodyInScene(scene, toName, assertOk(applyPatch(toPrev, toPatch)));
+      let candidate = replaceBodyInScene(structuredClone(scene), fromName, removal.body);
+      candidate = replaceBodyInScene(candidate, toName, inserted);
+      const patch = assertOk(diffScenes(scene, candidate));
+      history.push({ patch, inverse: invertScenePatch(patch), label: "transfer", tag: "construct", runId: null });
+      scene = assertOk(applyScenePatch(scene, patch));
       expect(validateScene(scene)).toEqual([]);
     };
 
@@ -121,12 +114,9 @@ describe("cross-body transfers", () => {
     const after = [...elementMultiset(scene.bodies.main), ...elementMultiset(scene.bodies.pool)].sort();
     expect(after).toEqual(before);
 
-    // Undo restores both bodies atomically.
+    // Undo restores both bodies atomically — one patch, one apply.
     const undoResult = history.undo()!;
-    expect(undoResult.steps).toHaveLength(2);
-    for (const step of undoResult.steps) {
-      scene = replaceBodyInScene(scene, step.bodyName, assertOk(applyPatch(scene.bodies[step.bodyName], step.patch)));
-    }
+    scene = assertOk(applyScenePatch(scene, undoResult.patch));
     expect(validateScene(scene)).toEqual([]);
     expect(scene.bodies.pool.vessels.pool.contains?.some((element) => element.id === "boarding-axe")).toBe(true);
     expect(scene.bodies.main.vessels["left-hand"].contains ?? []).toEqual(
@@ -190,6 +180,29 @@ describe("versus arena relations", () => {
     ]);
     expect(pruned.scene.relations).toEqual([]);
     expect(validateScene(pruned.scene)).toEqual([]);
+  });
+
+  it("marquee: severing the wielding arm is ONE patch carrying disconnects AND the removeRelation", () => {
+    const scene = arena();
+    // The app's funnel sequence: sever, prune, diff the whole scene.
+    const { body: severed } = severDistalSubtree(structuredClone(scene.bodies.red), "lower-right-arm");
+    const candidate = replaceBodyInScene(structuredClone(scene), "red", severed);
+    const pruned = pruneDanglingRelations(candidate);
+    expect(pruned.removed).toHaveLength(1);
+
+    const patch = assertOk(diffScenes(scene, pruned.scene));
+    const ops = patch.patch.map((entry) => entry.op);
+    expect(ops).toContain("removeRelation");
+    expect(ops).toContain("disconnect");
+
+    const applied = assertOk(applyScenePatch(scene, patch));
+    expect(applied.relations).toEqual([]);
+    expect(validateScene(applied)).toEqual([]);
+
+    // One undo — one inverse patch — restores the arm AND the wields relation.
+    const restored = assertOk(applyScenePatch(applied, invertScenePatch(patch)));
+    expect(restored.relations).toEqual(scene.relations);
+    expect(restored.bodies.red.vessels["right-hand"].ports).toBeDefined();
   });
 
   it("prunes relations whose endpoint vessel was deleted outright", () => {
