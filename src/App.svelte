@@ -595,7 +595,6 @@
     excludeVessels={["pool"]}
     dropTargets={rootDropTargets}
     rejectVesselId={rootRejectVesselId}
-    {mode}
     {status}
     {canDelete}
     {canStrike}
@@ -607,7 +606,6 @@
     {selectedPresetId}
     {pan}
     viewControls={viewControls}
-    onModeChange={setMode}
     onPresetChange={handlePresetChange}
     onViewControlsChange={handleViewControlsChange}
     onPanChange={(nextPan) => (pan = nextPan)}
@@ -667,6 +665,8 @@
   </PaperDollCanvas>
   {#if mode === "construct"}
     <SourcePanel
+      {mode}
+      onModeChange={setMode}
       source={constructionSource}
       status={sourceStatus}
       selectedId={selectedRootVesselId}
@@ -676,6 +676,8 @@
     />
   {:else}
     <PoolPanel
+      {mode}
+      onModeChange={setMode}
       elements={poolElements}
       onElementPointerDown={(event, index) => beginElementDrag(event, ROOT_ADDRESS, "pool", index)}
       onElementPointerMove={updateElementDrag}

@@ -20,7 +20,11 @@
   import { untrack } from "svelte";
   import { type ConstructionNodeRange } from "./construction-source";
 
+  type Mode = "construct" | "play";
+
   type Props = {
+    mode: Mode;
+    onModeChange: (mode: Mode) => void;
     source: string;
     status: string | null;
     selectedId: string;
@@ -29,7 +33,7 @@
     onSelectNode: (id: string) => void;
   };
 
-  let { source, status, selectedId, nodeRanges, onSourceChange, onSelectNode }: Props = $props();
+  let { mode, onModeChange, source, status, selectedId, nodeRanges, onSourceChange, onSelectNode }: Props = $props();
 
   let editorEl: HTMLElement;
   // $state so the sync effects re-run once the editor mounts; a plain variable
@@ -198,8 +202,13 @@
 
 <section class="source-panel" aria-label="Paper doll construction source">
   <header>
-    <h1>Paper Doll Construction</h1>
-    <span class:error={Boolean(status)} class="hint">{status ?? "Edit code to redraw"}</span>
+    <div class="mode-toggle" role="group" aria-label="Editor mode">
+      <button type="button" data-active={mode === "construct"} onclick={() => onModeChange("construct")}>construct</button>
+      <button type="button" data-active={mode === "play"} onclick={() => onModeChange("play")}>play</button>
+    </div>
+    {#if status}
+      <span class="error hint">{status}</span>
+    {/if}
   </header>
   <div class="source-editor-wrap" bind:this={editorEl}></div>
 </section>

@@ -16,8 +16,6 @@
     status: string;
   };
 
-  type Mode = "construct" | "play";
-
   type Props = {
     body: Body;
     presentation: Record<string, VesselPresentation>;
@@ -25,7 +23,6 @@
     excludeVessels?: readonly string[];
     dropTargets?: ReadonlySet<string> | null;
     rejectVesselId?: string | null;
-    mode: Mode;
     status: string;
     canDelete: boolean;
     canStrike: boolean;
@@ -38,7 +35,6 @@
     pan: Pan;
     viewControls: ViewControls;
     window?: Snippet;
-    onModeChange: (mode: Mode) => void;
     onPresetChange: (presetId: string) => void;
     onViewControlsChange: (controls: ViewControls) => void;
     onPanChange: (pan: Pan) => void;
@@ -62,7 +58,6 @@
     excludeVessels = [],
     dropTargets = null,
     rejectVesselId = null,
-    mode,
     status,
     canDelete,
     canStrike,
@@ -75,7 +70,6 @@
     pan,
     viewControls,
     window,
-    onModeChange,
     onPresetChange,
     onViewControlsChange,
     onPanChange,
@@ -113,10 +107,6 @@
   <header>
     <div class="status" role="status">{status}</div>
     <div class="canvas-controls" aria-label="Canvas sizing controls">
-      <div class="mode-toggle" role="group" aria-label="Editor mode">
-        <button type="button" data-active={mode === "construct"} onclick={() => onModeChange("construct")}>construct</button>
-        <button type="button" data-active={mode === "play"} onclick={() => onModeChange("play")}>play</button>
-      </div>
       <label>
         <span>body</span>
         <select value={selectedPresetId} onchange={changePreset}>

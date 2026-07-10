@@ -1,14 +1,25 @@
 <script lang="ts">
   import { type ContainedElement } from "paperdoll";
 
+  type Mode = "construct" | "play";
+
   type Props = {
+    mode: Mode;
+    onModeChange: (mode: Mode) => void;
     elements: readonly ContainedElement[];
     onElementPointerDown: (event: PointerEvent, index: number) => void;
     onElementPointerMove: (event: PointerEvent) => void;
     onElementPointerUp: (event: PointerEvent) => void;
   };
 
-  let { elements, onElementPointerDown, onElementPointerMove, onElementPointerUp }: Props = $props();
+  let {
+    mode,
+    onModeChange,
+    elements,
+    onElementPointerDown,
+    onElementPointerMove,
+    onElementPointerUp
+  }: Props = $props();
 
   function describe(element: ContainedElement): string {
     return element.id ?? (element.type ? `${element.kind}/${element.type}` : element.kind);
@@ -21,8 +32,10 @@
 
 <section class="pool-panel" aria-label="Item pool">
   <header>
-    <span>Item Pool</span>
-    <span class="pool-hint">Drag items onto vessels</span>
+    <div class="mode-toggle" role="group" aria-label="Editor mode">
+      <button type="button" data-active={mode === "construct"} onclick={() => onModeChange("construct")}>construct</button>
+      <button type="button" data-active={mode === "play"} onclick={() => onModeChange("play")}>play</button>
+    </div>
   </header>
   <ul class="pool-list">
     {#each elements as element, index (index)}
