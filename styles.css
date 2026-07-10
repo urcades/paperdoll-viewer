@@ -135,7 +135,6 @@ paper-doll-editor {
 .edge[data-flow] {
   stroke: var(--power);
   stroke-opacity: 1;
-  stroke-width: calc(var(--node-line-width) * 2);
   stroke-dasharray: 6 5;
   shape-rendering: auto;
 }
