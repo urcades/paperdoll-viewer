@@ -99,12 +99,11 @@ preset matching survive edit → undo round-trips.
   update-element op, so mutating `data` remains this honest composition. It
   stopped mattering for history — the funnel diffs the result — but the sims
   still route every write through it.
-- **`replaceBodyAtAddress`** survives as the *nested-edit lift*: paperfold
-  patches address one body's vessels, so an edit inside a drawer
-  (`main/back/nested-backpack`) is lifted to a root-level replacement and
-  diffed there. `diffBodies` sees it as removeElement+insertElement of the
-  containing element — coarse (the whole nested element is the diff unit) but
-  correct and invertible for free.
+- **`replaceBodyAtAddress`** — mostly retired. With paperfold 0.2.0's `path`
+  entries the funnel diffs nested drawer edits at the *inner* body and ships
+  them as `{body, path}` entries (vessel-scoped, not whole-drawer
+  replacement); the lift survives only to build the candidate scene that
+  relation pruning inspects before the commit.
 - **`severDistalSubtree`** — a policy ("what severing means") composed from
   kernel ops. Correctly not a protocol op.
 - **Trial-validate legality** (`canDisconnect`, `legalConnectTargets`, and now

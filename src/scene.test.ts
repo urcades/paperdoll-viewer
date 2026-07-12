@@ -4,11 +4,19 @@
 import { describe, expect, it } from "vitest";
 import { deleteVessel, insertElement, parseDocument, removeElement, type Body } from "paperdoll";
 import { parseScene, validateScene } from "paperchain";
-import { applyScenePatch, diffScenes, invertScenePatch } from "paperfold";
+import {
+  applyScenePatch,
+  canonicalizeScene,
+  diffBodies,
+  diffScenes,
+  invertScenePatch,
+  PAPERFOLD_SCENE_PROTOCOL,
+  type ScenePatchDocument
+} from "paperfold";
 import { History } from "./history.svelte";
 import { SCENE_PRESETS } from "./sample-document";
 import { formatSceneSource, getSceneNodeRanges, parseSceneSource } from "./construction-source";
-import { severDistalSubtree } from "./workbench";
+import { replaceBodyAtAddress, severDistalSubtree } from "./workbench";
 import {
   addRelation,
   getBodyAtSceneAddress,
@@ -267,6 +275,73 @@ describe("versus arena relations", () => {
     const pruned = pruneDanglingRelations(nextScene);
     expect(pruned.removed.map((relation) => relation.kind)).toEqual(["grapples"]);
     expect(validateScene(pruned.scene)).toEqual([]);
+  });
+});
+
+describe("nested drawer edits as path entries", () => {
+  // The funnel's nested branch (commitBodyAt in App.svelte): diff at the
+  // inner body, stamp entries with {body, path}. A one-element edit deep in
+  // a drawer records as that one entry — not as replacement of the whole
+  // containing element, which is what lifting + diffScenes would produce.
+  it("records a nested insert as one path entry, applies and inverts exactly", () => {
+    const scene = structuredClone(SCENE_PRESETS.find((preset) => preset.id === "humanoid")!.scene);
+    const path = "back/nested-backpack";
+    const prevInner = getBodyAtSceneAddress(scene, `main/${path}`)!;
+    const editedInner = insertElement(structuredClone(prevInner), "top-pocket", {
+      kind: "item",
+      type: "tool",
+      id: "flint"
+    });
+
+    const innerDiff = assertOk(diffBodies(prevInner, editedInner));
+    const patch: ScenePatchDocument = {
+      protocol: PAPERFOLD_SCENE_PROTOCOL,
+      patch: innerDiff.patch.map((entry) => ({ ...entry, body: "main", path }))
+    };
+
+    // Fine-grained: every entry is addressed through the path and touches
+    // only the edited inner vessel (diffBodies reconciles a vessel's contains
+    // wholesale, so the compass rides along — but nothing outside top-pocket
+    // and no whole-drawer replacement).
+    expect(patch.patch.length).toBeGreaterThan(0);
+    for (const entry of patch.patch) {
+      expect(entry).toMatchObject({ body: "main", path, vesselId: "top-pocket" });
+    }
+    expect(patch.patch.at(-1)).toMatchObject({
+      op: "insertElement",
+      element: { kind: "item", type: "tool", id: "flint" }
+    });
+
+    const applied = assertOk(applyScenePatch(scene, patch));
+    const pocket = getBodyAtSceneAddress(applied, `main/${path}`)!.vessels["top-pocket"];
+    expect(pocket.contains?.some((element) => element.id === "flint")).toBe(true);
+
+    const restored = assertOk(applyScenePatch(applied, invertScenePatch(patch)));
+    expect(restored).toEqual(canonicalizeScene(scene));
+  });
+
+  // Contrast pin: the lift + whole-scene diff reifies the same edit as
+  // replacement of the entire containing element (shallow diff, documented
+  // v2 limitation) — which is exactly why the funnel prefers path entries.
+  it("lift + diffScenes reifies the same edit as whole-element replacement", () => {
+    const scene = structuredClone(SCENE_PRESETS.find((preset) => preset.id === "humanoid")!.scene);
+    const prevInner = getBodyAtSceneAddress(scene, "main/back/nested-backpack")!;
+    const editedInner = insertElement(structuredClone(prevInner), "top-pocket", {
+      kind: "item",
+      type: "tool",
+      id: "flint"
+    });
+    const lifted = replaceBodyInScene(
+      scene,
+      "main",
+      replaceBodyAtAddress(structuredClone(scene.bodies.main), "back/nested-backpack", editedInner)
+    );
+
+    const patch = assertOk(diffScenes(scene, lifted));
+    const ops = patch.patch.map((entry) => entry.op);
+    expect(ops).toContain("removeElement");
+    expect(ops).toContain("insertElement");
+    expect(patch.patch.length).toBeGreaterThan(1);
   });
 });
 

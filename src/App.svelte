@@ -28,9 +28,12 @@
   import {
     applyScenePatch,
     canonicalizeScene,
+    diffBodies,
     diffScenes,
     invertScenePatch,
-    type ScenePatchDocument
+    PAPERFOLD_SCENE_PROTOCOL,
+    type ScenePatchDocument,
+    type ScenePatchEntry
   } from "paperfold";
   import { History, type HistoryTag } from "./history.svelte";
   import { assertApplied, snapshotBody } from "./protocol.svelte";
@@ -39,6 +42,7 @@
   import {
     canDisconnect,
     describeElement,
+    getBodyAtAddress,
     joinAddress,
     legalDropVessels,
     replaceBodyAtAddress,
@@ -428,11 +432,23 @@
   function commitCandidate(candidate: Scene, nextSelection: Selection | null, meta: MutationMeta): void {
     const prevScene = snapshotScene();
     const pruned = pruneDanglingRelations(candidate);
-    const label =
-      pruned.removed.length > 0
-        ? `${meta.status} — ${pruned.removed.map((relation) => `${relation.kind} ${relation.from} → ${relation.to}`).join(", ")} dropped`
-        : meta.status;
     const patch = assertApplied(diffScenes(prevScene, pruned.scene));
+    commitPatch(prevScene, patch, pruned.removed, nextSelection, meta);
+  }
+
+  // The shared funnel tail: apply the patch (validating every scene law and
+  // canonicalizing), record it with its inverse, and run the commitScene tail.
+  function commitPatch(
+    prevScene: Scene,
+    patch: ScenePatchDocument,
+    droppedRelations: readonly Relation[],
+    nextSelection: Selection | null,
+    meta: MutationMeta
+  ): void {
+    const label =
+      droppedRelations.length > 0
+        ? `${meta.status} — ${droppedRelations.map((relation) => `${relation.kind} ${relation.from} → ${relation.to}`).join(", ")} dropped`
+        : meta.status;
     if (patch.patch.length === 0) {
       // No-op commit (e.g. a power pulse with nothing left to drain): update
       // the status line without polluting history.
@@ -597,19 +613,40 @@
   }
 
   // The commit funnel. Callers hand over a candidate next body for a scene
-  // address; the funnel lifts nested edits to that body's root, swaps it
-  // into a candidate scene, and commitCandidate turns the whole change into
-  // one invertible paperfold/v2 scene patch.
+  // address. Top-level edits become a candidate scene diffed by
+  // commitCandidate. Nested drawer edits diff at the INNER body and ship as
+  // paperfold/v2 path entries ("main/back/nested-backpack" is exactly the v2
+  // embedded-body chain grammar), so a one-element edit three drawers deep
+  // records as that one entry — not as replacement of the whole containing
+  // element. The lift through replaceBodyAtAddress survives only to build
+  // the candidate that relation pruning inspects.
   function commitBodyAt(sceneAddress: string, nextBody: Body, meta: MutationMeta): void {
     try {
       const { bodyName, address } = splitSceneAddress(sceneAddress);
-      const prevBody = snapshotBody(scene.bodies[bodyName]);
-      const nextRoot = replaceBodyAtAddress(prevBody, address, snapshotBody(nextBody));
-      commitCandidate(
-        replaceBodyInScene(snapshotScene(), bodyName, nextRoot),
-        meta.select ? { address: sceneAddress, target: meta.select } : selection,
-        meta
-      );
+      const prevScene = snapshotScene();
+      const prevBody = prevScene.bodies[bodyName];
+      const nextSelection = meta.select ? { address: sceneAddress, target: meta.select } : selection;
+
+      if (address === "") {
+        commitCandidate(replaceBodyInScene(prevScene, bodyName, snapshotBody(nextBody)), nextSelection, meta);
+        return;
+      }
+
+      const prevInner = getBodyAtAddress(prevBody, address);
+      if (!prevInner) throw new Error(`No embedded body at "${sceneAddress}"`);
+      const innerDiff = assertApplied(diffBodies(prevInner, snapshotBody(nextBody)));
+
+      const candidateBody = replaceBodyAtAddress(prevBody, address, snapshotBody(nextBody));
+      const pruned = pruneDanglingRelations(replaceBodyInScene(prevScene, bodyName, candidateBody));
+
+      const patch: ScenePatchDocument = {
+        protocol: PAPERFOLD_SCENE_PROTOCOL,
+        patch: [
+          ...pruned.removed.map((relation): ScenePatchEntry => ({ op: "removeRelation", relation })),
+          ...innerDiff.patch.map((entry): ScenePatchEntry => ({ ...entry, body: bodyName, path: address }))
+        ]
+      };
+      commitPatch(prevScene, patch, pruned.removed, nextSelection, meta);
     } catch (error) {
       setErrorStatus(error);
     }

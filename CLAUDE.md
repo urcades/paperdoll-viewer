@@ -20,12 +20,14 @@ build, and docs/postmortem.md for the family migration and protocol notes.
   figure. Figure bodies each render a canvas; addresses are scene addresses
   (`"main"`, `"pool"`, `"main/back/nested-backpack"`) split by
   `splitSceneAddress` in `src/scene.ts`.
-- **Every mutation flows through App's commit funnel**: callers build a
-  candidate scene (nested edits lifted via `replaceBodyAtAddress`), then
-  `commitCandidate` prunes dangling relations, `diffScenes` the whole change
-  into ONE paperfold/v2 scene patch, `applyScenePatch`es it (validating all
-  scene laws + canonicalizing), records it, and runs the `commitScene` tail.
-  Don't mutate the scene anywhere else.
+- **Every mutation flows through App's commit funnel** into ONE paperfold/v2
+  scene patch: top-level edits become candidate scenes (`commitCandidate` →
+  prune dangling relations → `diffScenes`); nested drawer edits diff at the
+  INNER body and ship as `{body, path}` entries (`commitBodyAt`'s nested
+  branch — `replaceBodyAtAddress` survives only to build the prune
+  candidate). Both paths share `commitPatch` (`applyScenePatch` validates
+  all scene laws + canonicalizes, records patch+inverse, runs the
+  `commitScene` tail). Don't mutate the scene anywhere else.
 - **History is scene patches — one currency** (`src/history.svelte.ts`):
   each entry is `{patch, inverse}` of a `ScenePatchDocument`; cross-body
   transfers and relation edits are ordinary entries. Undo/redo/seek apply
