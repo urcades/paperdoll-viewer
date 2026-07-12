@@ -216,3 +216,33 @@ tests and in the browser.
 
 Proposals #3–#6 remain open; #3 (papermold over scenes) is now the natural
 next step, since change and judgment finally share the same substrate.
+
+## Addendum 2 (2026-07-12): proposal #3 shipped as papermold 0.2.0
+
+papermold gained a `papermold/v2` document kind: **scene profiles** — one
+document now carries body profiles (v1 grammar verbatim) and scene profiles
+whose clauses see relations. The RFC's "profiles-of-scenes… deferred, bodies
+first, one-consumer-at-a-time" resolved with this app's versus mode as the
+consumer.
+
+What that *enabled* here (this one is enablement, not deletion — the
+judgments it makes possible simply didn't exist as code before):
+
+- **"Is red armed?" is a conformance question** — `relations: [{at: "red",
+  kind: "wields", atLeast: 1}]` with subtree anchoring, so a weapon held
+  anywhere in the fighter counts, and severing the wielding arm (whose
+  relation prunes in the same commit) flips the badge in the same undoable
+  patch.
+- **"Are they engaged?"** — a relation demand with an `otherEndpoint` prefix
+  filter.
+- **"Is this a legal duel?"** — a universal quantifier (`forAllBodies`,
+  excluding the pool, conforming to `living-combatant`) plus a kind demand
+  delegating one-weapon-per-hand to the declaration paperchain already
+  enforces.
+
+The versus HUD renders these as dashed scene badges beside the per-body
+ones; ~40 lines of app code (`sceneVerdicts` derived + profile authoring)
+bought four live scene judgments. The quantifier vocabulary stayed inside
+the family's linear-walk law: one implicit variable per clause, no joins.
+
+Proposals #4–#6 remain open (all hygiene-scale; see the assessment above).

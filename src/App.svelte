@@ -9,7 +9,14 @@
     type Body,
     type ContainedElement
   } from "paperdoll";
-  import { DEAD_STATUS, judgeAll, PRESET_PROFILES, type ProfileVerdict } from "./profiles";
+  import {
+    DEAD_STATUS,
+    judgeAll,
+    judgeSceneAll,
+    PRESET_PROFILES,
+    PRESET_SCENE_PROFILES,
+    type ProfileVerdict
+  } from "./profiles";
   import PaperDollCanvas from "./PaperDollCanvas.svelte";
   import TimelinePanel from "./TimelinePanel.svelte";
   import PoolPanel from "./PoolPanel.svelte";
@@ -176,6 +183,17 @@
     if (profileIds.length === 0) return [];
     try {
       return judgeAll(snapshotBody(mainBody), profileIds);
+    } catch {
+      return [];
+    }
+  });
+  // Scene-wide judgments (papermold/v2): armed/engaged/legal-duel over the
+  // whole scene, relations included. Scene facts belong to neither canvas.
+  let sceneVerdicts: ProfileVerdict[] = $derived.by(() => {
+    const sceneProfileIds = PRESET_SCENE_PROFILES[selectedPresetId] ?? [];
+    if (sceneProfileIds.length === 0) return [];
+    try {
+      return judgeSceneAll(snapshotScene(), sceneProfileIds);
     } catch {
       return [];
     }
@@ -907,6 +925,7 @@
     canUndo={history.canUndo}
     canRedo={history.canRedo}
     verdicts={profileVerdicts}
+    {sceneVerdicts}
     onVerdictClick={(verdict) =>
       (status = verdict.conforms
         ? `Conforms to ${verdict.profileId}`

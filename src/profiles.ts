@@ -2,8 +2,19 @@
 // read element `data`. Anything the simulation knows that judgment needs
 // (death, most notably) must be reified as a structural element first: the
 // sim counts, paperfold records the patch, papermold judges the shape.
+//
+// One papermold/v2 document carries both namespaces: body profiles (judged
+// per figure) and scene profiles (judged over the whole paperchain scene —
+// relations included, so "armed" and "engaged" are conformance questions).
 
-import { conforms, judge, validateProfiles, type PapermoldDocument } from "papermold";
+import {
+  conformsBody,
+  judgeBody,
+  judgeScene,
+  validateSceneProfiles,
+  type PapermoldSceneDocument,
+  type Scene
+} from "papermold";
 import type { Body, ProtocolError } from "paperdoll";
 
 /** The reified death marker. Inserted into a body's root vessel by the sim. */
@@ -15,9 +26,9 @@ export type ProfileVerdict = {
   errors: ProtocolError[];
 };
 
-/** Profile documents for the app (single PapermoldDocument). */
-export const APP_PROFILES: PapermoldDocument = {
-  protocol: "papermold/v1",
+/** Profile document for the app (single papermold/v2 document). */
+export const APP_PROFILES: PapermoldSceneDocument = {
+  protocol: "papermold/v2",
   profiles: {
     // The combatant preset counted as alive: head present and attached through
     // the neck (the preset's actual geometry: head.bottom <-> neck.top,
@@ -68,22 +79,58 @@ export const APP_PROFILES: PapermoldDocument = {
         }
       }
     }
+  },
+  sceneProfiles: {
+    // A fighter is armed while any relation of kind `wields` touches it —
+    // subtree anchoring means a weapon held anywhere in the body counts, and
+    // severing the wielding arm (which prunes the relation in the same
+    // commit) disarms.
+    "armed-red": {
+      relations: [{ at: "red", kind: "wields", atLeast: 1 }]
+    },
+    "armed-blue": {
+      relations: [{ at: "blue", kind: "wields", atLeast: 1 }]
+    },
+    // Engaged: red grapples blue (symmetric — stored orientation irrelevant).
+    engaged: {
+      relations: [{ at: "red", kind: "grapples", atLeast: 1, otherEndpoint: { prefix: "blue" } }]
+    },
+    // A legal duel: every figure (the pool spectates) is a living combatant,
+    // and the wields kind carries its one-weapon-per-hand budget — universal
+    // multiplicity delegated to the declaration paperchain already enforces.
+    "legal-duel": {
+      forAllBodies: [{ excluding: ["pool"], check: { conformsTo: "living-combatant" } }],
+      kinds: { wields: { declaration: { fromMax: 1 } } }
+    }
   }
 };
 
-/** Which profiles apply per preset id. */
+/** Which body profiles apply per preset id. */
 export const PRESET_PROFILES: Record<string, string[]> = {
   combatant: ["living-combatant", "armored"],
   "powered-mech": ["powered-rig"],
   humanoid: []
 };
 
-/** Judge a body against every applicable profile. */
+/** Which scene profiles apply per preset id. */
+export const PRESET_SCENE_PROFILES: Record<string, string[]> = {
+  "versus-arena": ["armed-red", "armed-blue", "engaged", "legal-duel"]
+};
+
+/** Judge a body against every applicable body profile. */
 export function judgeAll(body: Body, profileIds: string[]): ProfileVerdict[] {
   return profileIds.map((profileId) => {
-    const errors = judge(body, APP_PROFILES, profileId);
+    const errors = judgeBody(body, APP_PROFILES, profileId);
     return { profileId, conforms: errors.length === 0, errors };
   });
 }
 
-export { conforms, judge, validateProfiles };
+/** Judge the whole scene against every applicable scene profile. */
+export function judgeSceneAll(scene: Scene, sceneProfileIds: string[]): ProfileVerdict[] {
+  return sceneProfileIds.map((profileId) => {
+    const errors = judgeScene(scene, APP_PROFILES, profileId);
+    return { profileId, conforms: errors.length === 0, errors };
+  });
+}
+
+export { conformsBody as conforms, judgeBody as judge, validateSceneProfiles };

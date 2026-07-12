@@ -42,8 +42,8 @@ importers:
         specifier: ^0.2.0
         version: 0.2.0
       papermold:
-        specifier: ^0.1.0
-        version: 0.1.0
+        specifier: file:../papermold
+        version: file:../papermold
       svelte:
         specifier: ^5.56.4
         version: 5.56.4
@@ -597,8 +597,8 @@ packages:
     resolution: {integrity: sha512-fus37w76XgrkUesUkm78hueRxOPTG5EY35a4IjKL3P4ZrtpRdvBXl5PovhPynAWIGAALSepGA9NzornxHak7Bg==}
     engines: {node: '>=18'}
 
-  papermold@0.1.0:
-    resolution: {integrity: sha512-OZgtCd4HW3HWaIX66JioN19ujJMXZ78oUduRmVL4RFxIJq4XuSir0gzlrOyh9Eh6CXmNZRmibcEj+L713/aqRw==}
+  papermold@file:../papermold:
+    resolution: {directory: ../papermold, type: directory}
     engines: {node: '>=18'}
 
   parse5@8.0.1:
@@ -1318,8 +1318,9 @@ snapshots:
       paperchain: 0.1.0
       paperdoll: 0.8.2
 
-  papermold@0.1.0:
+  papermold@file:../papermold:
     dependencies:
+      paperchain: 0.1.0
       paperdoll: 0.8.2
 
   parse5@8.0.1:

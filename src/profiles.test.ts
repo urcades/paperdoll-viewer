@@ -1,9 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { insertElement, type Body } from "paperdoll";
-import { APP_PROFILES, DEAD_STATUS, PRESET_PROFILES, conforms, judge, judgeAll, validateProfiles } from "./profiles";
+import {
+  APP_PROFILES,
+  DEAD_STATUS,
+  PRESET_PROFILES,
+  PRESET_SCENE_PROFILES,
+  conforms,
+  judge,
+  judgeAll,
+  judgeSceneAll,
+  validateSceneProfiles
+} from "./profiles";
 import { healAll } from "./combat";
 import { replaceElementData, severDistalSubtree } from "./workbench";
-import { PAPER_DOLL_PRESETS } from "./sample-document";
+import { PAPER_DOLL_PRESETS, SCENE_PRESETS } from "./sample-document";
+import { addRelation, pruneDanglingRelations, replaceBodyInScene } from "./scene";
 
 const presetBody = (id: string): Body => {
   const preset = PAPER_DOLL_PRESETS.find((candidate) => candidate.id === id);
@@ -12,8 +23,8 @@ const presetBody = (id: string): Body => {
 };
 
 describe("papermold profiles", () => {
-  it("ships a valid profile document", () => {
-    expect(validateProfiles(APP_PROFILES)).toEqual([]);
+  it("ships a valid papermold/v2 document", () => {
+    expect(validateSceneProfiles(APP_PROFILES)).toEqual([]);
   });
 
   it("maps presets to profiles that exist in the document", () => {
@@ -89,5 +100,74 @@ describe("papermold profiles", () => {
     expect(conforms(body, APP_PROFILES, "living-combatant")).toBe(false);
     const paths = judge(body, APP_PROFILES, "living-combatant").map((error) => error.path);
     expect(paths).toContain("$.profiles.living-combatant.vessels.head.ports.bottom");
+  });
+});
+
+describe("papermold/v2 scene profiles (versus arena)", () => {
+  const arena = () => {
+    const preset = SCENE_PRESETS.find((candidate) => candidate.id === "versus-arena");
+    if (!preset) throw new Error("missing versus-arena preset");
+    return structuredClone(preset.scene);
+  };
+
+  it("maps the versus preset to scene profiles that exist in the document", () => {
+    for (const ids of Object.values(PRESET_SCENE_PROFILES)) {
+      for (const id of ids) {
+        expect(APP_PROFILES.sceneProfiles[id]).toBeDefined();
+      }
+    }
+  });
+
+  it("judges the pristine arena: red armed, blue unarmed, not engaged, a legal duel", () => {
+    const verdicts = Object.fromEntries(
+      judgeSceneAll(arena(), PRESET_SCENE_PROFILES["versus-arena"]).map((verdict) => [
+        verdict.profileId,
+        verdict.conforms
+      ])
+    );
+    expect(verdicts).toEqual({
+      "armed-red": true,
+      "armed-blue": false,
+      engaged: false,
+      "legal-duel": true
+    });
+  });
+
+  it("disarms red when the wielding arm is severed and the relation prunes in the same candidate", () => {
+    const scene = arena();
+    const { body: severed } = severDistalSubtree(structuredClone(scene.bodies.red), "lower-right-arm");
+    const candidate = replaceBodyInScene(scene, "red", severed);
+    const pruned = pruneDanglingRelations(candidate).scene;
+
+    expect(judgeSceneAll(pruned, ["armed-red"])[0].conforms).toBe(false);
+    const errors = judgeSceneAll(pruned, ["armed-red"])[0].errors;
+    expect(errors[0].path).toBe("$.sceneProfiles.armed-red.relations.0.atLeast");
+    expect(errors[0].message).toContain('participates in 0 counted "wields" relations');
+  });
+
+  it("engaged flips when a grapple between red and blue is added, in either stored orientation", () => {
+    const grappled = addRelation(arena(), { kind: "grapples", from: "blue/left-hand", to: "red/right-hand" });
+    expect(judgeSceneAll(grappled, ["engaged"])[0].conforms).toBe(true);
+
+    // A red-internal grapple does not count: the other endpoint must be blue.
+    // (grapples is irreflexive and fromMax 1, so use a fresh arena.)
+    expect(judgeSceneAll(arena(), ["engaged"])[0].conforms).toBe(false);
+  });
+
+  it("legal-duel fails per witness when a fighter dies (reified status)", () => {
+    const scene = arena();
+    const dead = insertElement(structuredClone(scene.bodies.blue), "torso", DEAD_STATUS);
+    const corpseScene = replaceBodyInScene(scene, "blue", dead);
+
+    const verdict = judgeSceneAll(corpseScene, ["legal-duel"])[0];
+    expect(verdict.conforms).toBe(false);
+    expect(verdict.errors).toEqual([
+      {
+        path: "$.sceneProfiles.legal-duel.forAllBodies.0.check.conformsTo",
+        message: 'Scene body "blue" does not conform to profile "living-combatant".'
+      }
+    ]);
+    // The pool is excluded, so it never appears as a witness.
+    expect(verdict.errors.some((error) => error.message.includes('"pool"'))).toBe(false);
   });
 });

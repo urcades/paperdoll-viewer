@@ -737,6 +737,10 @@ paper-doll-editor {
   color: #c0392b;
 }
 
+.scene-badge {
+  border-style: dashed;
+}
+
 .timeline {
   position: fixed;
   bottom: 56px;

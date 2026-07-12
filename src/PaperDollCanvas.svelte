@@ -35,6 +35,7 @@
     canUndo: boolean;
     canRedo: boolean;
     verdicts?: readonly ProfileVerdict[];
+    sceneVerdicts?: readonly ProfileVerdict[];
     onVerdictClick?: (verdict: ProfileVerdict) => void;
     canStrike: boolean;
     weaponId: string;
@@ -71,6 +72,7 @@
     canUndo,
     canRedo,
     verdicts = [],
+    sceneVerdicts = [],
     onVerdictClick,
     canStrike,
     weaponId,
@@ -130,7 +132,7 @@
         {/each}
       </select>
     </label>
-    {#if verdicts.length > 0}
+    {#if verdicts.length > 0 || sceneVerdicts.length > 0}
       <div class="profile-badges" aria-label="Profile conformance">
         {#each verdicts as verdict (verdict.profileId)}
           <button
@@ -138,6 +140,19 @@
             class="profile-badge"
             data-conforms={verdict.conforms}
             title={verdict.conforms ? `conforms to ${verdict.profileId}` : `fails ${verdict.profileId} — click for details`}
+            onclick={() => onVerdictClick?.(verdict)}
+          >
+            {verdict.conforms ? "✓" : "✗"} {verdict.profileId}
+          </button>
+        {/each}
+        {#each sceneVerdicts as verdict (verdict.profileId)}
+          <button
+            type="button"
+            class="profile-badge scene-badge"
+            data-conforms={verdict.conforms}
+            title={verdict.conforms
+              ? `scene conforms to ${verdict.profileId}`
+              : `scene fails ${verdict.profileId} — click for details`}
             onclick={() => onVerdictClick?.(verdict)}
           >
             {verdict.conforms ? "✓" : "✗"} {verdict.profileId}

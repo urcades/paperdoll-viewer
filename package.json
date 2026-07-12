@@ -23,7 +23,7 @@
     "paperchain": "^0.1.0",
     "paperdoll": "^0.8.2",
     "paperfold": "^0.2.0",
-    "papermold": "^0.1.0",
+    "papermold": "file:../papermold",
     "svelte": "^5.56.4"
   },
   "devDependencies": {

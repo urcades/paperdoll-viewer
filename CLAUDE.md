@@ -45,7 +45,11 @@ build, and docs/postmortem.md for the family migration and protocol notes.
 - **The reify relay**: papermold never reads `data`. State that judgment
   needs must become structure — death is a `{kind:"status", type:"dead"}`
   element inserted in the same commit that observed it (`reifyDeath` in
-  App.svelte); `healAll` removes it. Profiles live in `src/profiles.ts`.
+  App.svelte); `healAll` removes it. Profiles live in `src/profiles.ts` as
+  ONE papermold/v2 document: body profiles (per-figure badges via
+  `judgeAll`/`judgeBody`) plus scene profiles (armed/engaged/legal-duel
+  versus badges via `judgeSceneAll`/`judgeScene` — relation clauses with
+  subtree anchoring, forAllBodies quantifiers, kind demands).
 - **Relation liveness is app policy**: `pruneDanglingRelations` (scene.ts)
   drops relations whose endpoints no longer resolve or sit on severed
   (unreachable-from-root) vessels — applied to the candidate scene *before*
