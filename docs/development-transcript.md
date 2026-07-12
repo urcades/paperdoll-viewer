@@ -213,3 +213,104 @@ Visual/UX passes, each small but principled:
    through the remove+insert-at composition.
 6. **The compiler won't save you at `unknown` boundaries** (the v3 migration's
    silent `validateDocument({body: wrapper})` bug); only behavioral tests did.
+
+---
+
+# Part II: the family sessions (July 10–12, 2026)
+
+The sibling protocols shipped — paperchain, paperfold, papermold — and the
+question changed from *"what does the protocol imply?"* to *"how much of this
+app should stop existing?"* Part I's theme held: when in doubt, align with
+the protocol. Part II added its converse: **when the protocol can't say it,
+ship the protocol change** — twice, to npm, with this app as the proving
+consumer both times.
+
+## Episode 10: the family migration (`91474c8`–`4de90f5`, July 10)
+
+A four-agent exploration mapped the three new packages against the app's
+hand-rolled inventory, and a six-phase plan rebuilt the viewer on all four
+protocols. The discipline that made it safe: a **characterization oracle**
+(21 pins over combat narration, power propagation, conditions, bleed rates,
+preset structure, editor round-trips) written before any refactor and frozen
+— it never changed and never failed across the entire migration.
+
+- **paperfold** deleted the impossibility of undo: the commit funnel became
+  diff → apply → record `{patch, inverse}`, and a timeline scrubber fell out
+  of `composePatches`. First contact also produced the family's biggest
+  consumer gotcha — all three siblings `structuredClone` internally and
+  throw on Svelte `$state` proxies. Snapshot at the boundary.
+- **papermold** deleted death-by-data-inference via the reify relay: the sim
+  observes dying, inserts `{kind:"status", type:"dead"}` in the same commit,
+  and profiles judge the shape. Undo un-kills.
+- **paperchain** deleted the pool hack (a phantom vessel smuggled into the
+  figure became a real second body) and made versus mode *expressible at
+  all*: red and blue combatants, `wields`/`grapples` kinds with declared
+  multiplicity, and disarm-by-dismemberment as app policy
+  (`pruneDanglingRelations`) — one reachability check per endpoint.
+
+The postmortem (`docs/postmortem.md`) closed the episode with six protocol
+improvement proposals, ranked by app code each would delete.
+
+## Episode 11: paperfold 0.2.0 — the scene is the document of record (July 11)
+
+Proposals #1 and #2 turned out to be one idea: *change should speak the
+family's full address grammar.* Both specs had already reserved the road —
+paperfold's RFC names "bodies *and* paperchain scenes" as targets, and
+paperchain's strict-dangling law exists to give paperfold transactions "a
+real job."
+
+paperfold 0.2.0 shipped `paperfold/v2`: scene patches whose kernel entries
+carry a `body` name and an optional `path` into embedded bodies, plus six
+entries reifying paperchain's ops with destruction records —
+`removeRelation`'s relation doubles as its own record in **stored
+orientation**, and `diffScenes` always emits the relation cleanup a severing
+implies ("the rope drops as part of the severing"). The v1 surface stayed
+byte-identical.
+
+The viewer migration collapsed the two-currency history (`BodyStep[]` +
+hand-inverted `SceneOp`s) into one `{patch, inverse}` pair per entry — net
+−50 lines while gaining guarantees — and later the same day (`271c3d5`)
+nested drawer edits switched from whole-element replacement to path entries
+diffed at the inner body. An adversarial review caught one real bug before
+release: relation pruning didn't recurse into embedded bodies.
+
+## Episode 12: papermold 0.2.0 — judgment learns to see scenes (July 12)
+
+Proposal #3 was enablement, not deletion: "is red disarmed?" was
+un-judgeable because profiles saw one body while relations lived in the
+scene. papermold 0.2.0 shipped `papermold/v2` scene profiles — relation
+demands with **subtree anchoring** (a sheathed sword still counts as
+wielded; anchor `"red"` can never match body `"red-two"`), kind demands as
+field-subset matches, and three universal-quantifier forms (`forAllBodies`
+with per-witness errors, `forbidsRelations`, and universal multiplicity
+delegated to the kind declarations paperchain already enforces). The rich
+vocabulary stayed inside the founding law: one implicit variable per clause,
+no joins, judgment remains a linear walk.
+
+The versus HUD proved it live: *armed-red*, *armed-blue*, *engaged*, and
+*legal-duel* as dashed scene badges. Adding a grapple flipped *engaged*;
+red's wielded-sword kill flipped *legal-duel* with a diagnostic naming blue
+as the witness; severing the wielding arm disarms in the same undoable
+patch. ~40 lines of app code bought four judgments that previously could not
+exist as code.
+
+## Protocol lessons, collected (Part II)
+
+7. **Characterize before you migrate.** A frozen oracle of pinned behavior
+   let four protocols replace the app's core with zero observable drift.
+8. **Destruction records are the whole trick.** Undo, staleness detection,
+   and same-transaction cleanup all fall out of ops that report what they
+   destroyed.
+9. **Consumer-first works.** Every deferral in the sibling RFCs ("scene
+   targeting," "profiles-of-scenes") resolved cleanly the moment a real
+   consumer arrived — and not before.
+10. **Enablement counts differently from deletion.** paperfold v2 shrank the
+    app; papermold v2 grew it slightly and was still the right protocol
+    change — measure features-per-line, not lines.
+11. **Quantifiers don't require joins.** One implicit variable per clause
+    covers "every fighter lives" and "no hand wields two weapons" while
+    judgment stays linear; the NP-hard cliff starts exactly at shared
+    variables.
+12. **The wedge is usually the tooling.** Twice a "hung page" was a stale
+    browser-extension session, not the app; read the accessibility tree
+    before diagnosing an infinite loop.
