@@ -183,7 +183,11 @@
     if (profileIds.length === 0) return [];
     try {
       return judgeAll(snapshotBody(mainBody), profileIds);
-    } catch {
+    } catch (error) {
+      // Judgment throws only on caller errors (invalid input, unknown
+      // profile id). A $derived cannot write the status state, so surface
+      // the bug in the console rather than silently dropping every badge.
+      console.error("body profile judgment failed", error);
       return [];
     }
   });
@@ -194,7 +198,8 @@
     if (sceneProfileIds.length === 0) return [];
     try {
       return judgeSceneAll(snapshotScene(), sceneProfileIds);
-    } catch {
+    } catch (error) {
+      console.error("scene profile judgment failed", error);
       return [];
     }
   });
