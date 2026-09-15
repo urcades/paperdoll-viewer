@@ -33,17 +33,17 @@ importers:
         specifier: ^1.2.3
         version: 1.2.3
       paperchain:
-        specifier: ^0.1.0
-        version: 0.1.0
+        specifier: ^0.2.0
+        version: 0.2.0
       paperdoll:
-        specifier: ^0.8.2
-        version: 0.8.2
+        specifier: ^0.9.0
+        version: 0.9.0
       paperfold:
-        specifier: ^0.2.0
-        version: 0.2.0
+        specifier: ^0.3.0
+        version: 0.3.0
       papermold:
-        specifier: ^0.2.0
-        version: 0.2.0
+        specifier: ^0.3.0
+        version: 0.3.0
       svelte:
         specifier: ^5.56.4
         version: 5.56.4
@@ -591,20 +591,20 @@ packages:
     resolution: {integrity: sha512-9miFgM2OFba7hB+pRgvtV84pYTBaoTHohvmIgiRt6dRIzbwEOIaNaP+dIlGs2fNFoB0SeISs0Jz5WFVRid6Xyg==}
     engines: {node: '>=12.20.0'}
 
-  paperchain@0.1.0:
-    resolution: {integrity: sha512-qpyfDsbj8tNwT8JSMN2Q80OtWCr80bn9Rfm22TwabGyIyel+/bQdQPDZxXjozxY0okk1xzniaS4S539L6j9c2A==}
+  paperchain@0.2.0:
+    resolution: {integrity: sha512-Ipzv5S5rSD3Jyk5n/ANMHrcAPiIVB+L1wrW4jvBlIDBggq29/X+Mmi/0aatBKEoTSkZEVF310kRwU0mSmLt1CA==}
     engines: {node: '>=18'}
 
-  paperdoll@0.8.2:
-    resolution: {integrity: sha512-im3nDSU8YCv6CEJGlW70aFXYE36FdrIxiV2MUdzJ86OM2dHt31ZZqTyif/mdQo3mrreFD0OG+gReufW/7o+THw==}
+  paperdoll@0.9.0:
+    resolution: {integrity: sha512-bMBOhFlqlVRGPdfOgMv0h86Ktq4O84xWf9i30OigT8KJR0NLU4c+FifK6XRXIKHestflVhSokO4qiWlRExud0Q==}
     engines: {node: '>=18'}
 
-  paperfold@0.2.0:
-    resolution: {integrity: sha512-fus37w76XgrkUesUkm78hueRxOPTG5EY35a4IjKL3P4ZrtpRdvBXl5PovhPynAWIGAALSepGA9NzornxHak7Bg==}
+  paperfold@0.3.0:
+    resolution: {integrity: sha512-5Z6+jMeWzwYFuwMxEBGq77XZbZ4Tw1k6mbfUMnwK6GP+UOGSl9pp0TzEd0peBulfBNTiQGjE1HqL4+Ojpctcog==}
     engines: {node: '>=18'}
 
-  papermold@0.2.0:
-    resolution: {integrity: sha512-UFkHgdwm9XYfk94JIk50U4NlZfoKuQuMzs+gS1JzHQhO7ijZGyiRAgAMmhoBkb7MSEV2kw6JToWlURzXWLZksg==}
+  papermold@0.3.0:
+    resolution: {integrity: sha512-Lo8F3TpH6f0vC6lpMJHw5akjtVCKxMQHThKZl2mNYx5LTg/qfornDcVIHDYllYupWuaao1p4Avo2P3CBtMSsRw==}
     engines: {node: '>=18'}
 
   parse5@8.0.1:
@@ -1320,21 +1320,21 @@ snapshots:
 
   obug@2.1.3: {}
 
-  paperchain@0.1.0:
+  paperchain@0.2.0:
     dependencies:
-      paperdoll: 0.8.2
+      paperdoll: 0.9.0
 
-  paperdoll@0.8.2: {}
+  paperdoll@0.9.0: {}
 
-  paperfold@0.2.0:
+  paperfold@0.3.0:
     dependencies:
-      paperchain: 0.1.0
-      paperdoll: 0.8.2
+      paperchain: 0.2.0
+      paperdoll: 0.9.0
 
-  papermold@0.2.0:
+  papermold@0.3.0:
     dependencies:
-      paperchain: 0.1.0
-      paperdoll: 0.8.2
+      paperchain: 0.2.0
+      paperdoll: 0.9.0
 
   parse5@8.0.1:
     dependencies:

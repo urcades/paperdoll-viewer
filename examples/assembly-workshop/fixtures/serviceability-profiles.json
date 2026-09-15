@@ -1,0 +1,49 @@
+{
+  "protocol": "papermold/v2",
+  "profiles": {
+    "robot-base": {
+      "vessels": {
+        "torso": { "exists": true }
+      }
+    },
+    "tool-assembly": {
+      "vessels": {
+        "upper-arm": {
+          "ports": {
+            "right": { "vessel": "forearm", "side": "left" }
+          }
+        },
+        "forearm": {
+          "ports": {
+            "right": { "vessel": "tool-mount", "side": "left" }
+          }
+        },
+        "tool-mount": {
+          "containsAtLeast": [
+            { "kind": "tool", "type": "welder" }
+          ]
+        }
+      }
+    }
+  },
+  "sceneProfiles": {
+    "serviceable": {
+      "bodies": {
+        "robot": { "conformsTo": "robot-base" },
+        "arm-unit": { "conformsTo": "tool-assembly" }
+      },
+      "relations": [
+        {
+          "at": "arm-unit",
+          "kind": "telemetry",
+          "role": "from",
+          "atLeast": 1,
+          "otherEndpoint": { "prefix": "station" }
+        }
+      ],
+      "forbidsRelations": [
+        { "kind": "mounted" }
+      ]
+    }
+  }
+}
