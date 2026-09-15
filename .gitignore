@@ -2,3 +2,7 @@ node_modules/
 dist/
 .pnpm-store/
 .DS_Store
+
+# Python reference-consumer caches
+__pycache__/
+*.pyc

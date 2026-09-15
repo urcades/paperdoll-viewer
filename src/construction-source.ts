@@ -1,4 +1,4 @@
-import { parseDocument, type PaperDollDocument } from "paperdoll";
+import { parseDocument, validatePortableJson, type PaperDollDocument } from "paperdoll";
 import { parseScene, type Scene } from "paperchain";
 import { type VesselPresentation } from "./sample-document";
 import { type ViewControls } from "./workbench";
@@ -33,6 +33,8 @@ export function parseConstructionSource(source: string): PaperDollConstruction {
   if (!value.document || !value.presentation || !value.view) {
     throw new Error("paperDoll must include document, presentation, and view");
   }
+
+  assertPortableSource(value.document);
 
   const parsedDocument = parseDocument(value.document);
   if (!parsedDocument.ok) {
@@ -87,6 +89,8 @@ export function parseSceneSource(source: string): SceneConstruction {
     throw new Error("paperScene must include scene, presentation, and view");
   }
 
+  assertPortableSource(value.scene);
+
   const parsedScene = parseScene(value.scene);
   if (!parsedScene.ok) {
     throw new Error(parsedScene.errors.map((error) => `${error.path} ${error.message}`).join("\n"));
@@ -97,6 +101,13 @@ export function parseSceneSource(source: string): SceneConstruction {
     presentation: value.presentation,
     view: coerceViewControls(value.view)
   };
+}
+
+function assertPortableSource(value: unknown): void {
+  const errors = validatePortableJson(value);
+  if (errors.length > 0) {
+    throw new Error(errors.map((error) => `${error.path} ${error.message}`).join("\n"));
+  }
 }
 
 export function formatSceneSource(

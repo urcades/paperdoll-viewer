@@ -2,8 +2,15 @@
 // the pool as a real body, cross-body transfers as multi-step history entries.
 
 import { describe, expect, it } from "vitest";
-import { deleteVessel, insertElement, parseDocument, removeElement, type Body } from "paperdoll";
-import { parseScene, validateScene } from "paperchain";
+import {
+  deleteVessel,
+  insertElement,
+  parseDocument,
+  removeElement,
+  type Body,
+  type ContainedElement
+} from "paperdoll";
+import { parseScene, resolveSceneAddress, validateScene, type Relation, type Scene } from "paperchain";
 import {
   applyScenePatch,
   canonicalizeScene,
@@ -131,6 +138,107 @@ describe("cross-body transfers", () => {
       SCENE_PRESETS.find((candidate) => candidate.id === "humanoid")!.scene.bodies.main.vessels["left-hand"]
         .contains ?? []
     );
+  });
+
+  it("moves a nested backpack with explicit relation policy in one atomic, invertible patch", () => {
+    const pack: ContainedElement = {
+      kind: "item",
+      id: "pack",
+      body: {
+        root: "pocket",
+        vessels: { pocket: { contains: [{ kind: "item", id: "sword" }] } }
+      }
+    };
+    const emptyBody = (): Body => ({ root: "root", vessels: { root: {} } });
+    const original: Scene = {
+      protocol: "paperchain/v1",
+      bodies: {
+        alice: {
+          root: "root",
+          vessels: { root: { contains: [pack, { kind: "item", id: "pack-two" }] } }
+        },
+        bob: emptyBody(),
+        carol: emptyBody()
+      },
+      kinds: { owns: {}, wields: { fromMax: 1 }, watches: {} },
+      relations: [
+        { kind: "owns", from: "carol/root", to: "alice/root/pack/pocket/sword" },
+        { kind: "owns", from: "carol/root", to: "alice/root/pack-two" },
+        { kind: "wields", from: "alice/root", to: "alice/root/pack/pocket/sword" },
+        { kind: "watches", from: "carol/root", to: "alice/root" }
+      ]
+    };
+    const before = structuredClone(original);
+    expect(validateScene(original)).toEqual([]);
+
+    const removal = removeElement(original.bodies.alice, "root", 0);
+    const inserted = insertElement(original.bodies.bob, "root", removal.element);
+    const movedBodies: Scene = {
+      ...original,
+      bodies: { ...original.bodies, alice: removal.body, bob: inserted }
+    };
+
+    const oldPrefix = "alice/root/pack";
+    const newPrefix = "bob/root/pack";
+    const followsMovedPack = (address: string) => address === oldPrefix || address.startsWith(`${oldPrefix}/`);
+    const rewriteMovedPack = (address: string) =>
+      followsMovedPack(address) ? `${newPrefix}${address.slice(oldPrefix.length)}` : address;
+
+    // This is viewer policy, expressed by the consumer rather than inferred by
+    // Paperchain/Paperfold. Different relation kinds deliberately react
+    // differently to the same structural move.
+    const relationPolicy = {
+      owns: (relation: Relation): Relation => ({
+        ...relation,
+        from: rewriteMovedPack(relation.from),
+        to: rewriteMovedPack(relation.to)
+      }),
+      wields: (relation: Relation): Relation | null =>
+        followsMovedPack(relation.from) || followsMovedPack(relation.to) ? null : { ...relation },
+      watches: (relation: Relation): Relation => relation
+    } satisfies Record<"owns" | "wields" | "watches", (relation: Relation) => Relation | null>;
+
+    const candidate: Scene = {
+      ...movedBodies,
+      relations: original.relations.flatMap((relation) => {
+        const action = relationPolicy[relation.kind as keyof typeof relationPolicy];
+        const next = action(relation);
+        return next === null ? [] : [next];
+      })
+    };
+    const patch = assertOk(diffScenes(original, candidate));
+    expect(patch.patch.map((entry) => entry.op)).toEqual(
+      expect.arrayContaining(["removeElement", "insertElement", "removeRelation", "addRelation"])
+    );
+    const applied = assertOk(applyScenePatch(original, patch));
+    expect(validateScene(applied)).toEqual([]);
+
+    expect(applied.relations).toEqual([
+      { kind: "owns", from: "carol/root", to: "alice/root/pack-two" },
+      { kind: "owns", from: "carol/root", to: "bob/root/pack/pocket/sword" },
+      { kind: "watches", from: "carol/root", to: "alice/root" }
+    ]);
+    expect(applied.relations.find((relation) => relation.kind === "watches")).toEqual(
+      original.relations.find((relation) => relation.kind === "watches")
+    );
+    expect(resolveSceneAddress(applied, "alice/root/pack/pocket/sword")).toBeNull();
+    const movedSword = resolveSceneAddress(applied, "bob/root/pack/pocket/sword");
+    expect(movedSword?.kind).toBe("element");
+    expect(movedSword?.kind === "element" ? movedSword.element.id : undefined).toBe("sword");
+    expect(applied.bodies.bob.vessels.root.contains).toEqual([pack]);
+    expect(applied.bodies.alice.vessels.root.contains).toEqual([{ kind: "item", id: "pack-two" }]);
+
+    const restored = assertOk(applyScenePatch(applied, invertScenePatch(patch)));
+    expect(restored).toEqual(canonicalizeScene(before));
+
+    // Structural movement without relation cleanup is illegal. Applying that
+    // incomplete transaction fails as a whole and cannot mutate its input.
+    const noRelationCleanup: ScenePatchDocument = {
+      protocol: PAPERFOLD_SCENE_PROTOCOL,
+      patch: patch.patch.filter((entry) => entry.op !== "removeRelation" && entry.op !== "addRelation")
+    };
+    expect(applyScenePatch(original, noRelationCleanup).ok).toBe(false);
+    expect(original).toEqual(before);
   });
 });
 

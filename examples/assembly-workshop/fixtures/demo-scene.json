@@ -1,0 +1,96 @@
+{
+  "protocol": "paperchain/v1",
+  "bodies": {
+    "robot": {
+      "root": "torso",
+      "vessels": {
+        "torso": {
+          "ports": {
+            "right": { "vessel": "upper-arm", "side": "left" }
+          }
+        },
+        "upper-arm": {
+          "contains": [
+            {
+              "kind": "module",
+              "type": "actuator",
+              "id": "actuator",
+              "body": {
+                "root": "core",
+                "vessels": { "core": {} }
+              }
+            }
+          ],
+          "ports": {
+            "left": { "vessel": "torso", "side": "right" },
+            "right": { "vessel": "forearm", "side": "left" }
+          }
+        },
+        "forearm": {
+          "ports": {
+            "left": { "vessel": "upper-arm", "side": "right" },
+            "right": { "vessel": "tool-mount", "side": "left" }
+          }
+        },
+        "tool-mount": {
+          "contains": [
+            {
+              "kind": "tool",
+              "type": "welder",
+              "id": "welder",
+              "data": { "power": 40 }
+            }
+          ],
+          "ports": {
+            "left": { "vessel": "forearm", "side": "right" }
+          }
+        },
+        "upper-arm-two": {}
+      }
+    },
+    "robot-two": {
+      "root": "torso",
+      "vessels": { "torso": {} }
+    },
+    "station": {
+      "root": "console",
+      "vessels": { "console": {} }
+    },
+    "bay": {
+      "root": "pad",
+      "vessels": { "pad": {} }
+    }
+  },
+  "kinds": {
+    "mounted": { "irreflexive": true },
+    "telemetry": {},
+    "located-at": {}
+  },
+  "relations": [
+    {
+      "kind": "located-at",
+      "from": "robot/torso",
+      "to": "bay/pad"
+    },
+    {
+      "kind": "mounted",
+      "from": "robot/torso",
+      "to": "robot/upper-arm"
+    },
+    {
+      "kind": "telemetry",
+      "from": "robot-two/torso",
+      "to": "station/console"
+    },
+    {
+      "kind": "telemetry",
+      "from": "robot/upper-arm-two",
+      "to": "station/console"
+    },
+    {
+      "kind": "telemetry",
+      "from": "robot/upper-arm/actuator/core",
+      "to": "station/console"
+    }
+  ]
+}
